@@ -53,3 +53,8 @@ HOURLY_RETENTION_DAYS = int(os.getenv("HOURLY_RETENTION_DAYS", "90"))
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
+# Authentication (leave DASHBOARD_PASSWORD blank to disable auth)
+DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "admin")
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
+SECRET_KEY = os.getenv("SECRET_KEY", "")

@@ -1,6 +1,9 @@
 import logging
+import os
+from functools import wraps
 
-from flask import Flask, jsonify, render_template, request
+import bcrypt
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 import config
 from services import db
@@ -14,6 +17,28 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+app.secret_key = config.SECRET_KEY or os.urandom(32)
+
+# Hash the password once at startup if auth is enabled
+_password_hash = None
+_auth_enabled = bool(config.DASHBOARD_PASSWORD)
+if _auth_enabled:
+    _password_hash = bcrypt.hashpw(
+        config.DASHBOARD_PASSWORD.encode("utf-8"), bcrypt.gensalt()
+    )
+    logger.info("Dashboard authentication enabled (user: %s)", config.DASHBOARD_USERNAME)
+else:
+    logger.info("Dashboard authentication disabled (no DASHBOARD_PASSWORD set)")
+
+
+def login_required(f):
+    """Decorator that redirects to /login if auth is enabled and user is not logged in."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if _auth_enabled and not session.get("authenticated"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
 
 # Initialize services
 pvs6_svc = PVS6Service(
@@ -39,29 +64,59 @@ collector = DataCollector(
 )
 
 
+# ---- Auth routes ----
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not _auth_enabled:
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if (
+            username == config.DASHBOARD_USERNAME
+            and bcrypt.checkpw(password.encode("utf-8"), _password_hash)
+        ):
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        return render_template("login.html", error="Invalid username or password")
+    return render_template("login.html", error=None)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 # ---- Page routes ----
 
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html", active_page="dashboard")
 
 
 @app.route("/circuits")
+@login_required
 def circuits_page():
     return render_template("circuits.html", active_page="circuits")
 
 
 @app.route("/history")
+@login_required
 def history_page():
     return render_template("history.html", active_page="history")
 
 
 @app.route("/discovery")
+@login_required
 def discovery_page():
     return render_template("discovery.html", active_page="discovery")
 
 
 @app.route("/settings")
+@login_required
 def settings_page():
     return render_template("settings.html", active_page="settings")
 
@@ -69,6 +124,7 @@ def settings_page():
 # ---- Real-time API ----
 
 @app.route("/api/realtime")
+@login_required
 def api_realtime():
     """Latest reading from collector cache (fast) or DB fallback."""
     # Prefer in-memory cache from collector (no DB hit)
@@ -87,6 +143,7 @@ def api_realtime():
 
 
 @app.route("/api/circuits")
+@login_required
 def api_circuits():
     """Latest per-circuit breakdown."""
     # Prefer in-memory cache from collector
@@ -106,6 +163,7 @@ def api_circuits():
 # ---- Historical API ----
 
 @app.route("/api/readings")
+@login_required
 def api_readings():
     """Raw readings with optional start/end/limit."""
     start = request.args.get("start")
@@ -116,6 +174,7 @@ def api_readings():
 
 
 @app.route("/api/hourly")
+@login_required
 def api_hourly():
     """Hourly summaries."""
     start = request.args.get("start")
@@ -125,6 +184,7 @@ def api_hourly():
 
 
 @app.route("/api/daily")
+@login_required
 def api_daily():
     """Daily summaries."""
     start = request.args.get("start")
@@ -134,6 +194,7 @@ def api_daily():
 
 
 @app.route("/api/summary")
+@login_required
 def api_summary():
     """Today's running totals and costs."""
     from datetime import datetime
@@ -163,6 +224,7 @@ def api_summary():
 
 
 @app.route("/api/costs")
+@login_required
 def api_costs():
     """Cost breakdown for a period (day/week/month)."""
     period = request.args.get("period", "day")
@@ -197,6 +259,7 @@ def api_costs():
 
 
 @app.route("/api/bill-estimate")
+@login_required
 def api_bill_estimate():
     """Monthly bill estimate based on current usage, matching CORE Electric format."""
     reading = collector.latest or db.get_latest_reading()
@@ -224,6 +287,7 @@ def api_bill_estimate():
 # ---- Discovery API ----
 
 @app.route("/api/discovery/scan", methods=["POST"])
+@login_required
 def api_discovery_scan():
     """Trigger PVS6 network scan."""
     from services.discovery_service import discover_pvs6
@@ -235,6 +299,7 @@ def api_discovery_scan():
 # ---- Settings API ----
 
 @app.route("/api/settings", methods=["GET"])
+@login_required
 def api_settings_get():
     """Get current configuration."""
     return jsonify({
@@ -254,6 +319,7 @@ def api_settings_get():
 
 
 @app.route("/api/settings", methods=["PUT"])
+@login_required
 def api_settings_put():
     """Update configuration values."""
     data = request.get_json()
@@ -275,6 +341,7 @@ def api_settings_put():
 # ---- Status API ----
 
 @app.route("/api/status")
+@login_required
 def api_status():
     """Service health check."""
     reading = db.get_latest_reading()
