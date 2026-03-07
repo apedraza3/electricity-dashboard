@@ -35,40 +35,50 @@ class SunPowerService:
             logger.warning("SunPower credentials not configured")
             return False
 
-        credentials = {
-            "username": self.email,
-            "password": self.password,
-        }
+        # Try multiple credential formats and endpoints
+        credential_variants = [
+            {"username": self.email, "password": self.password},
+            {"userName": self.email, "password": self.password},
+            {"email": self.email, "password": self.password},
+            {"isPersistent": False, "username": self.email, "password": self.password},
+        ]
 
-        # Try primary endpoint first, then SunStrong fallback
-        for auth_url, power_url in [
+        auth_endpoints = [
             (AUTH_URL, CURRENT_POWER_URL),
             (SUNSTRONG_AUTH_URL, SUNSTRONG_POWER_URL),
-        ]:
-            try:
-                resp = requests.post(
-                    auth_url,
-                    json=credentials,
-                    timeout=self._timeout,
-                    headers={"Content-Type": "application/json"},
-                )
-                if resp.ok:
-                    data = resp.json()
-                    token = data.get("StatusCode")
-                    # Some responses use different token field names
-                    if not token or token == "Failure":
-                        token = data.get("TokenID") or data.get("tokenId") or data.get("Guid")
-                    if token and token != "Failure":
-                        self._token = token
-                        self._auth_url = auth_url
-                        self._power_url = power_url
-                        logger.info("SunPower authenticated via %s", auth_url)
-                        return True
-                    else:
-                        logger.warning("SunPower auth response: %s", data)
-            except Exception as e:
-                logger.debug("SunPower auth failed at %s: %s", auth_url, e)
-                continue
+        ]
+
+        for auth_url, power_url in auth_endpoints:
+            for credentials in credential_variants:
+                try:
+                    resp = requests.post(
+                        auth_url,
+                        json=credentials,
+                        timeout=self._timeout,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    logger.info("SunPower auth %s status=%d body=%s",
+                                auth_url, resp.status_code, resp.text[:500])
+
+                    if resp.ok:
+                        data = resp.json()
+                        # Look for token in various response fields
+                        token = None
+                        for key in ["Guid", "TokenID", "tokenId", "token", "access_token", "StatusCode"]:
+                            val = data.get(key)
+                            if val and val not in ("Failure", "failure", "error"):
+                                token = val
+                                break
+
+                        if token:
+                            self._token = token
+                            self._auth_url = auth_url
+                            self._power_url = power_url
+                            logger.info("SunPower authenticated via %s", auth_url)
+                            return True
+                except Exception as e:
+                    logger.info("SunPower auth error at %s: %s", auth_url, e)
+                    continue
 
         logger.error("SunPower authentication failed on all endpoints")
         return False
