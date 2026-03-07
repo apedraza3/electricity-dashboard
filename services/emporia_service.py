@@ -103,19 +103,21 @@ class EmporiaService:
                     # Convert kWh/minute to watts: kWh/min * 60 min/hr * 1000 W/kW
                     usage_w = usage_kwh_per_min * 60 * 1000
 
-                    name = channel.name or f"Channel {ch_num}"
-                    is_crypto = int(ch_num) in crypto_circuit_ids
-
-                    # Skip the "Balance" channel (channel_num 0) which is a virtual total
-                    if ch_num == 0:
+                    # Skip non-integer channel keys (e.g. "1,2,3" combined mains)
+                    try:
+                        ch_num_int = int(ch_num)
+                    except (ValueError, TypeError):
                         continue
 
-                    # Channel 1,2,3 = mains; higher = individual circuits
-                    # The "1,2,3" main channels represent total house usage
-                    # Individual circuits are typically channel_num >= 4
+                    name = channel.name or f"Channel {ch_num_int}"
+                    is_crypto = ch_num_int in crypto_circuit_ids
+
+                    # Skip the "Balance" channel (channel_num 0) which is a virtual total
+                    if ch_num_int == 0:
+                        continue
 
                     circuits.append({
-                        "channel_num": int(ch_num),
+                        "channel_num": ch_num_int,
                         "name": name,
                         "usage_w": round(usage_w, 1),
                         "is_crypto": is_crypto,
