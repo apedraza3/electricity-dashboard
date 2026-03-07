@@ -85,6 +85,12 @@ class EmporiaService:
             from pyemvue.enums import Scale, Unit
 
             device_gids = [d.device_gid for d in self.devices]
+            logger.info("Emporia devices: %s", [
+                {"gid": d.device_gid, "model": getattr(d, "model", "?"),
+                 "channels": [{"num": ch.channel_num, "name": ch.name}
+                              for ch in (d.channels or [])]}
+                for d in self.devices
+            ])
             usage_dict = self.vue.get_device_list_usage(
                 deviceGids=device_gids,
                 instant=datetime.utcnow(),
