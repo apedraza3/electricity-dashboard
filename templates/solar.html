@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+{% block title %}Solar ROI - Electricity Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="section-header">
+        <h2>Solar ROI Calculator</h2>
+    </div>
+
+    <!-- System Config -->
+    <div class="settings-grid" style="margin-bottom: 24px;">
+        <div class="settings-section">
+            <h3>System Details</h3>
+            <div class="input-group">
+                <label for="systemCost">Total System Cost ($)</label>
+                <input type="number" id="systemCost" class="input" step="0.01" min="0" placeholder="25000">
+            </div>
+            <div class="input-group">
+                <label for="incentives">Incentives / Tax Credits ($)</label>
+                <input type="number" id="incentives" class="input" step="0.01" min="0" placeholder="7500">
+            </div>
+            <div class="input-group">
+                <label for="installDate">Install Date</label>
+                <input type="date" id="installDate" class="input">
+            </div>
+            <div class="input-group">
+                <label for="systemSize">System Size (kW)</label>
+                <input type="number" id="systemSize" class="input" step="0.1" min="0" placeholder="8.5">
+            </div>
+            <div class="input-group">
+                <label for="panelCount">Number of Panels</label>
+                <input type="number" id="panelCount" class="input" min="0" placeholder="24">
+            </div>
+            <div class="input-group">
+                <label for="inverter">Inverter Model</label>
+                <input type="text" id="inverter" class="input" placeholder="SunPower PVS6">
+            </div>
+            <div style="margin-top: 8px;">
+                <button class="btn btn-primary btn-sm" onclick="saveConfig()">Save System Details</button>
+                <span id="configStatus" class="status-inline"></span>
+            </div>
+        </div>
+
+        <!-- ROI Summary -->
+        <div class="settings-section">
+            <h3>ROI Summary</h3>
+            <div class="roi-stats">
+                <div class="roi-stat">
+                    <span class="roi-label">Net System Cost</span>
+                    <span class="roi-value" id="roiNetCost">$--</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Months Active</span>
+                    <span class="roi-value" id="roiMonthsActive">--</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Total Production</span>
+                    <span class="roi-value" id="roiTotalKwh">-- kWh</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Total Savings</span>
+                    <span class="roi-value text-green" id="roiTotalSavings">$--</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Avg Monthly Savings</span>
+                    <span class="roi-value" id="roiMonthlySavings">$--</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Avg Monthly Production</span>
+                    <span class="roi-value" id="roiMonthlyKwh">-- kWh</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Payback Progress</span>
+                    <span class="roi-value" id="roiPaybackPct">--%</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Remaining to Payback</span>
+                    <span class="roi-value" id="roiRemaining">$--</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Est. Months to Payback</span>
+                    <span class="roi-value" id="roiMonthsPayback">--</span>
+                </div>
+                <div class="roi-stat">
+                    <span class="roi-label">Annual ROI</span>
+                    <span class="roi-value" id="roiAnnualPct">--%</span>
+                </div>
+            </div>
+
+            <!-- Payback progress bar -->
+            <div class="progress-container">
+                <div class="progress-bar" id="paybackBar" style="width: 0%"></div>
+            </div>
+            <div class="progress-label">
+                <span id="paybackLabel">0% paid back</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cumulative Savings Chart -->
+    <div class="chart-section">
+        <div class="section-header">
+            <h2>Cumulative Savings</h2>
+        </div>
+        <div class="chart-container">
+            <canvas id="savingsChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Monthly Production Table -->
+    <div class="chart-section">
+        <div class="section-header">
+            <h2>Monthly Production</h2>
+            <button class="btn btn-sm btn-primary" onclick="openAddModal()">+ Add Month</button>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table" id="prodTable">
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        <th>Production (kWh)</th>
+                        <th>Savings ($)</th>
+                        <th>Source</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="prodTableBody">
+                    <tr><td colspan="5" class="empty">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Production Modal -->
+<div class="modal-overlay" id="addModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>Add Monthly Production</h3>
+            <button class="btn-close" onclick="closeAddModal()">&times;</button>
+        </div>
+        <form id="prodForm" onsubmit="saveProduction(event)">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Month *</label>
+                    <input type="month" id="prodMonth" required>
+                </div>
+                <div class="form-group">
+                    <label>Production (kWh) *</label>
+                    <input type="number" id="prodKwh" step="0.1" min="0" required placeholder="850">
+                </div>
+            </div>
+            <p class="text-muted text-sm" style="margin-top:8px;">
+                Enter total solar production for the month. Check your SunPower app or electric bill.
+            </p>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+                <button type="submit" class="btn btn-success">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.roi-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.roi-stat { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.roi-label { color: var(--text-muted); font-size: 0.8rem; }
+.roi-value { font-weight: 600; font-size: 0.95rem; }
+.text-green { color: var(--green); }
+.text-muted { color: var(--text-muted); }
+.text-sm { font-size: 0.8rem; }
+
+.progress-container {
+    margin-top: 16px;
+    background: var(--bg);
+    border-radius: 8px;
+    height: 24px;
+    overflow: hidden;
+}
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), #34d399);
+    border-radius: 8px;
+    transition: width 0.5s ease;
+    min-width: 2px;
+}
+.progress-label {
+    text-align: center;
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+}
+.modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; width: 90%; max-width: 450px;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h3 { font-size: 1.1rem; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+.form-group input { padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.85rem; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.table-wrapper { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.data-table th, .data-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+.data-table th { color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+.data-table td.empty { text-align: center; color: var(--text-muted); padding: 40px; }
+
+.btn-close { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; }
+.btn-success { background: var(--green); color: white; }
+.btn-success:hover { background: #059669; }
+.btn-danger { background: var(--red); color: white; font-size: 0.75rem; padding: 4px 10px; }
+.btn-danger:hover { background: #dc2626; }
+
+@media (max-width: 768px) {
+    .roi-stats { grid-template-columns: 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let savingsChart;
+
+async function loadConfig() {
+    const resp = await fetch('/api/solar/config');
+    const c = await resp.json();
+    document.getElementById('systemCost').value = c.system_cost || '';
+    document.getElementById('incentives').value = c.incentives || '';
+    document.getElementById('installDate').value = c.install_date || '';
+    document.getElementById('systemSize').value = c.system_size_kw || '';
+    document.getElementById('panelCount').value = c.panel_count || '';
+    document.getElementById('inverter').value = c.inverter || '';
+}
+
+async function saveConfig() {
+    const data = {
+        solar_system_cost: document.getElementById('systemCost').value,
+        solar_install_date: document.getElementById('installDate').value,
+        solar_system_size_kw: document.getElementById('systemSize').value,
+        solar_panel_count: document.getElementById('panelCount').value,
+        solar_inverter: document.getElementById('inverter').value,
+        solar_incentives: document.getElementById('incentives').value,
+    };
+    const resp = await fetch('/api/solar/config', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+    });
+    const status = document.getElementById('configStatus');
+    status.textContent = resp.ok ? 'Saved!' : 'Failed';
+    status.className = 'status-inline ' + (resp.ok ? 'status-ok' : 'status-err');
+    setTimeout(() => { status.textContent = ''; }, 3000);
+    loadROI();
+}
+
+async function loadROI() {
+    const resp = await fetch('/api/solar/roi');
+    const d = await resp.json();
+
+    document.getElementById('roiNetCost').textContent = '$' + d.net_cost.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('roiMonthsActive').textContent = d.months_active;
+    document.getElementById('roiTotalKwh').textContent = d.total_production_kwh.toLocaleString() + ' kWh';
+    document.getElementById('roiTotalSavings').textContent = '$' + d.total_savings.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('roiMonthlySavings').textContent = '$' + d.avg_monthly_savings.toFixed(2);
+    document.getElementById('roiMonthlyKwh').textContent = d.avg_monthly_kwh.toLocaleString() + ' kWh';
+    document.getElementById('roiPaybackPct').textContent = d.payback_pct + '%';
+    document.getElementById('roiRemaining').textContent = '$' + d.remaining_to_payback.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('roiMonthsPayback').textContent = d.months_to_payback > 0 ? Math.round(d.months_to_payback) + ' months' : '--';
+    document.getElementById('roiAnnualPct').textContent = d.annual_roi_pct + '%';
+
+    // Progress bar
+    document.getElementById('paybackBar').style.width = d.payback_pct + '%';
+    document.getElementById('paybackLabel').textContent = d.payback_pct + '% paid back — $' + d.total_savings.toFixed(2) + ' of $' + d.net_cost.toLocaleString();
+
+    // Production table
+    const tbody = document.getElementById('prodTableBody');
+    const entries = d.production_entries || [];
+    if (!entries.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No production data yet. Add monthly data from your SunPower app.</td></tr>';
+    } else {
+        tbody.innerHTML = entries.map(e => `<tr>
+            <td>${e.month}</td>
+            <td>${e.production_kwh.toLocaleString()} kWh</td>
+            <td>$${(e.production_kwh * d.energy_rate).toFixed(2)}</td>
+            <td>${e.source}</td>
+            <td>${e.source === 'manual' ? '<button class="btn btn-danger" onclick="deleteProd(' + e.id + ')">Delete</button>' : '--'}</td>
+        </tr>`).join('');
+    }
+
+    // Cumulative savings chart
+    buildSavingsChart(entries, d.energy_rate);
+}
+
+function buildSavingsChart(entries, rate) {
+    if (!entries.length) return;
+
+    // Sort ascending by month
+    const sorted = [...entries].sort((a, b) => a.month.localeCompare(b.month));
+    const labels = sorted.map(e => e.month);
+    let cumulative = 0;
+    const data = sorted.map(e => {
+        cumulative += e.production_kwh * rate;
+        return Math.round(cumulative * 100) / 100;
+    });
+
+    const ctx = document.getElementById('savingsChart').getContext('2d');
+    if (savingsChart) savingsChart.destroy();
+    savingsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Cumulative Savings ($)',
+                data,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                fill: true,
+                tension: 0.3,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: '#94a3b8' } } },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+                y: {
+                    ticks: { color: '#94a3b8', callback: v => '$' + v },
+                    grid: { color: '#1e293b' },
+                },
+            },
+        },
+    });
+}
+
+function openAddModal() {
+    const now = new Date();
+    document.getElementById('prodMonth').value = now.toISOString().slice(0, 7);
+    document.getElementById('addModal').style.display = 'flex';
+}
+function closeAddModal() { document.getElementById('addModal').style.display = 'none'; }
+
+async function saveProduction(e) {
+    e.preventDefault();
+    await fetch('/api/solar/production', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            month: document.getElementById('prodMonth').value,
+            production_kwh: parseFloat(document.getElementById('prodKwh').value),
+        }),
+    });
+    closeAddModal();
+    document.getElementById('prodForm').reset();
+    loadROI();
+}
+
+async function deleteProd(id) {
+    if (!confirm('Delete this entry?')) return;
+    await fetch('/api/solar/production/' + id, { method: 'DELETE' });
+    loadROI();
+}
+
+loadConfig();
+loadROI();
+</script>
+{% endblock %}

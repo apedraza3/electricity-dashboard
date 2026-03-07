@@ -219,6 +219,35 @@ def set_config(key, value):
         )
 
 
+def get_solar_production():
+    """Get all manual solar production entries."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM solar_production ORDER BY month DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_solar_production(month, production_kwh, source="manual"):
+    """Add a monthly solar production entry."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            """INSERT INTO solar_production (month, production_kwh, source)
+               VALUES (?, ?, ?)
+               ON CONFLICT(month) DO UPDATE SET
+                production_kwh=excluded.production_kwh,
+                source=excluded.source""",
+            (month, production_kwh, source),
+        )
+        return cursor.lastrowid
+
+
+def delete_solar_production(entry_id):
+    """Delete a solar production entry."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM solar_production WHERE id = ?", (entry_id,))
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -277,4 +306,13 @@ CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS solar_production (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    month TEXT NOT NULL UNIQUE,
+    production_kwh REAL NOT NULL,
+    source TEXT DEFAULT 'manual',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_solar_prod_month ON solar_production(month);
 """

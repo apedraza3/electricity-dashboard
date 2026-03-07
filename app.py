@@ -115,6 +115,12 @@ def discovery_page():
     return render_template("discovery.html", active_page="discovery")
 
 
+@app.route("/solar")
+@login_required
+def solar_page():
+    return render_template("solar.html", active_page="solar")
+
+
 @app.route("/settings")
 @login_required
 def settings_page():
@@ -336,6 +342,132 @@ def api_settings_put():
             db.set_config(key, data[key])
 
     return jsonify({"success": True})
+
+
+# ---- Solar ROI API ----
+
+@app.route("/api/solar/config", methods=["GET"])
+@login_required
+def api_solar_config_get():
+    """Get solar system configuration."""
+    return jsonify({
+        "system_cost": float(db.get_config("solar_system_cost", "0")),
+        "install_date": db.get_config("solar_install_date", ""),
+        "system_size_kw": float(db.get_config("solar_system_size_kw", "0")),
+        "panel_count": int(db.get_config("solar_panel_count", "0")),
+        "inverter": db.get_config("solar_inverter", ""),
+        "incentives": float(db.get_config("solar_incentives", "0")),
+    })
+
+
+@app.route("/api/solar/config", methods=["PUT"])
+@login_required
+def api_solar_config_put():
+    """Update solar system configuration."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    solar_keys = [
+        "solar_system_cost", "solar_install_date", "solar_system_size_kw",
+        "solar_panel_count", "solar_inverter", "solar_incentives",
+    ]
+    for key in solar_keys:
+        if key in data:
+            db.set_config(key, data[key])
+    return jsonify({"success": True})
+
+
+@app.route("/api/solar/production", methods=["GET"])
+@login_required
+def api_solar_production():
+    """Get monthly solar production entries (manual + auto)."""
+    return jsonify(db.get_solar_production())
+
+
+@app.route("/api/solar/production", methods=["POST"])
+@login_required
+def api_solar_production_add():
+    """Add a manual monthly solar production entry."""
+    data = request.get_json()
+    if not data or "month" not in data or "production_kwh" not in data:
+        return jsonify({"error": "month and production_kwh required"}), 400
+    mid = db.add_solar_production(
+        month=data["month"],
+        production_kwh=float(data["production_kwh"]),
+        source=data.get("source", "manual"),
+    )
+    return jsonify({"id": mid, "success": True}), 201
+
+
+@app.route("/api/solar/production/<int:entry_id>", methods=["DELETE"])
+@login_required
+def api_solar_production_delete(entry_id):
+    """Delete a manual solar production entry."""
+    db.delete_solar_production(entry_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/solar/roi")
+@login_required
+def api_solar_roi():
+    """Calculate solar ROI summary."""
+    from datetime import datetime
+
+    system_cost = float(db.get_config("solar_system_cost", "0"))
+    incentives = float(db.get_config("solar_incentives", "0"))
+    install_date = db.get_config("solar_install_date", "")
+    energy_rate = float(db.get_config("energy_rate", config.ENERGY_RATE))
+
+    net_cost = system_cost - incentives
+
+    # Get all manual production entries
+    production_entries = db.get_solar_production()
+    total_production_kwh = sum(e["production_kwh"] for e in production_entries)
+
+    # Also add any auto-collected daily_summary solar data
+    daily_rows = db.get_daily_summaries()
+    auto_solar_kwh = sum(r.get("solar_production_kwh", 0) or 0 for r in daily_rows)
+    auto_savings = sum(r.get("solar_savings", 0) or 0 for r in daily_rows)
+
+    # Total savings = manual production * rate + auto-tracked savings
+    manual_savings = total_production_kwh * energy_rate
+    total_savings = manual_savings + auto_savings
+    total_kwh = total_production_kwh + auto_solar_kwh
+
+    # Calculate months since install
+    months_active = 0
+    if install_date:
+        try:
+            install_dt = datetime.strptime(install_date, "%Y-%m-%d")
+            delta = datetime.utcnow() - install_dt
+            months_active = max(delta.days / 30.44, 1)
+        except ValueError:
+            pass
+
+    avg_monthly_savings = total_savings / months_active if months_active > 0 else 0
+    avg_monthly_kwh = total_kwh / months_active if months_active > 0 else 0
+    payback_pct = (total_savings / net_cost * 100) if net_cost > 0 else 0
+    remaining = net_cost - total_savings
+    months_to_payback = remaining / avg_monthly_savings if avg_monthly_savings > 0 else 0
+    annual_roi = (avg_monthly_savings * 12 / net_cost * 100) if net_cost > 0 else 0
+
+    return jsonify({
+        "system_cost": system_cost,
+        "incentives": incentives,
+        "net_cost": net_cost,
+        "install_date": install_date,
+        "months_active": round(months_active, 1),
+        "total_production_kwh": round(total_kwh, 1),
+        "total_savings": round(total_savings, 2),
+        "avg_monthly_savings": round(avg_monthly_savings, 2),
+        "avg_monthly_kwh": round(avg_monthly_kwh, 1),
+        "payback_pct": round(min(payback_pct, 100), 1),
+        "remaining_to_payback": round(max(remaining, 0), 2),
+        "months_to_payback": round(months_to_payback, 0),
+        "annual_roi_pct": round(annual_roi, 1),
+        "energy_rate": energy_rate,
+        "production_entries": production_entries,
+    })
 
 
 # ---- Status API ----
