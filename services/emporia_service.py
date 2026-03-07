@@ -88,13 +88,36 @@ class EmporiaService:
             now = datetime.utcnow()
             start = now - timedelta(minutes=2)
 
-            # Collect individual circuit channels (skip combined mains like "1,2,3")
+            # Log full device/channel structure including nested devices
+            for device in self.devices:
+                logger.info("Device model=%s gid=%s", getattr(device, 'model', '?'), device.device_gid)
+                for ch in (device.channels or []):
+                    nested = getattr(ch, 'nested_devices', [])
+                    logger.info("  Ch %s name=%s multiplier=%s nested=%d",
+                                ch.channel_num, ch.name,
+                                getattr(ch, 'channel_multiplier', '?'),
+                                len(nested) if nested else 0)
+                    for nd in (nested or []):
+                        logger.info("    Nested: gid=%s model=%s channels=%s",
+                                    getattr(nd, 'device_gid', '?'), getattr(nd, 'model', '?'),
+                                    [c.channel_num for c in (getattr(nd, 'channels', []) or [])])
+
+            # Collect circuit channels from all devices + nested devices
             channel_list = []
             for device in self.devices:
                 for ch in (device.channels or []):
                     try:
                         ch_num_int = int(ch.channel_num)
                     except (ValueError, TypeError):
+                        # Check nested devices under combined mains channels
+                        for nd in (getattr(ch, 'nested_devices', []) or []):
+                            for nch in (getattr(nd, 'channels', []) or []):
+                                try:
+                                    nch_num = int(nch.channel_num)
+                                except (ValueError, TypeError):
+                                    continue
+                                if nch_num != 0:
+                                    channel_list.append((nd.device_gid, nch, nch_num))
                         continue
                     if ch_num_int == 0:
                         continue
