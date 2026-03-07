@@ -67,10 +67,12 @@ class EmporiaService:
     def get_instant_usage(self, crypto_circuit_ids=None):
         """Get real-time usage for all devices and channels.
 
+        NOTE: Emporia only monitors crypto mining circuits, NOT the whole house.
+        The PVS6 handles total house consumption.
+
         Returns dict with:
-            - total_w: total watts across all devices
-            - crypto_w: sum of watts on crypto circuits
-            - non_crypto_w: total - crypto
+            - total_w: total watts across all Emporia-monitored circuits
+            - crypto_w: sum of watts on circuits marked as crypto
             - circuits: list of {channel_num, name, usage_w, is_crypto}
         """
         if not self.ensure_auth():

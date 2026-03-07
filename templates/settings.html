@@ -33,15 +33,27 @@
             <div class="status-inline" id="emporiaStatus">
                 Checking...
             </div>
-            <p class="text-muted text-sm">Emporia credentials are set in the .env file for security.</p>
+            <p class="text-muted text-sm">Monitors crypto mining circuits only. Credentials in .env file.</p>
         </div>
 
-        <!-- Electricity -->
+        <!-- Electricity Rates (CORE Electric) -->
         <div class="settings-section">
-            <h3>Electricity Rate</h3>
+            <h3>CORE Electric Rates</h3>
             <div class="input-group">
-                <label for="elecRate">$/kWh</label>
-                <input type="number" id="elecRate" class="input" step="0.01" value="0.12">
+                <label for="energyRate">Energy Charge ($/kWh)</label>
+                <input type="number" id="energyRate" class="input" step="0.00001" value="0.08907">
+            </div>
+            <div class="input-group">
+                <label for="demandRate">Demand Charge ($/kW peak)</label>
+                <input type="number" id="demandRate" class="input" step="0.01" value="15.38">
+            </div>
+            <div class="input-group">
+                <label for="baseCharge">Base Service Charge ($/month)</label>
+                <input type="number" id="baseCharge" class="input" step="0.01" value="20.00">
+            </div>
+            <div class="input-group">
+                <label for="taxRate">Tax + Franchise Rate (%)</label>
+                <input type="number" id="taxRate" class="input" step="0.01" value="6.72">
             </div>
         </div>
 
@@ -71,7 +83,10 @@ async function loadSettings() {
     document.getElementById('pvs6Host').value = s.pvs6_host || '';
     document.getElementById('pvs6Port').value = s.pvs6_port || 443;
     document.getElementById('pvs6Https').checked = s.pvs6_use_https;
-    document.getElementById('elecRate').value = s.electricity_rate || 0.12;
+    document.getElementById('energyRate').value = s.energy_rate || 0.08907;
+    document.getElementById('demandRate').value = s.demand_rate || 15.38;
+    document.getElementById('baseCharge').value = s.base_service_charge || 20.00;
+    document.getElementById('taxRate').value = ((s.tax_rate || 0.0672) * 100).toFixed(2);
     document.getElementById('pollInterval').value = s.poll_interval || 60;
 
     document.getElementById('emporiaStatus').textContent =
@@ -85,7 +100,10 @@ async function saveSettings() {
         pvs6_host: document.getElementById('pvs6Host').value,
         pvs6_port: parseInt(document.getElementById('pvs6Port').value),
         pvs6_use_https: document.getElementById('pvs6Https').checked,
-        electricity_rate: parseFloat(document.getElementById('elecRate').value),
+        energy_rate: parseFloat(document.getElementById('energyRate').value),
+        demand_rate: parseFloat(document.getElementById('demandRate').value),
+        base_service_charge: parseFloat(document.getElementById('baseCharge').value),
+        tax_rate: parseFloat(document.getElementById('taxRate').value) / 100,
         poll_interval: parseInt(document.getElementById('pollInterval').value),
     };
 

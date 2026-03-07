@@ -81,13 +81,15 @@ class DataCollector:
         crypto_ids_str = db.get_config("crypto_circuit_ids", "")
         crypto_ids = [int(x.strip()) for x in crypto_ids_str.split(",") if x.strip()]
 
-        # Update electricity rate from runtime config
-        rate_str = db.get_config("electricity_rate")
-        if rate_str:
-            try:
-                self.calc.electricity_rate = float(rate_str)
-            except ValueError:
-                pass
+        # Update rate structure from runtime config
+        for attr, key in [("energy_rate", "energy_rate"), ("demand_rate", "demand_rate"),
+                          ("base_service_charge", "base_service_charge"), ("tax_rate", "tax_rate")]:
+            val = db.get_config(key)
+            if val:
+                try:
+                    setattr(self.calc, attr, float(val))
+                except ValueError:
+                    pass
 
         # Update PVS6 config from runtime settings
         pvs6_host = db.get_config("pvs6_host", "")

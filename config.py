@@ -20,8 +20,13 @@ PVS6_USE_HTTPS = os.getenv("PVS6_USE_HTTPS", "true").lower() == "true"
 EMPORIA_EMAIL = os.getenv("EMPORIA_EMAIL", "")
 EMPORIA_PASSWORD = os.getenv("EMPORIA_PASSWORD", "")
 
-# Electricity rate
-ELECTRICITY_RATE = float(os.getenv("ELECTRICITY_RATE", "0.12"))
+# Electricity rates (CORE Electric Cooperative structure)
+ENERGY_RATE = float(os.getenv("ENERGY_RATE", "0.08907"))          # $/kWh energy charge
+DEMAND_RATE = float(os.getenv("DEMAND_RATE", "15.38"))            # $/kW demand charge (peak)
+BASE_SERVICE_CHARGE = float(os.getenv("BASE_SERVICE_CHARGE", "20.00"))  # flat monthly fee
+TAX_RATE = float(os.getenv("TAX_RATE", "0.0672"))                # combined tax+franchise % (~6.72%)
+# Legacy fallback (effective blended rate)
+ELECTRICITY_RATE = float(os.getenv("ELECTRICITY_RATE", "0.133"))
 
 # Crypto circuit IDs (comma-separated Emporia channel numbers)
 CRYPTO_CIRCUIT_IDS = [

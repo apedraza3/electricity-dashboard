@@ -49,9 +49,9 @@ async function fetchRealtime() {
         // Metrics row
         document.getElementById('nonCryptoValue').textContent = ElecCharts.formatKw(nonCryptoW) + ' kW';
 
-        // Cost per hour: consumption_kW * rate
-        const rate = parseFloat(await getRate());
-        const costPerHr = (consW / 1000) * rate;
+        // Cost per hour: consumption_kW * energy_rate
+        const rates = await getRates();
+        const costPerHr = (consW / 1000) * rates.energy_rate;
         document.getElementById('costHrValue').textContent = '$' + costPerHr.toFixed(2);
 
         // Solar offset %
@@ -150,16 +150,21 @@ function renderLiveChart() {
     ], liveChart);
 }
 
-let cachedRate = null;
-async function getRate() {
-    if (cachedRate !== null) return cachedRate;
+let cachedRates = null;
+async function getRates() {
+    if (cachedRates !== null) return cachedRates;
     try {
         const resp = await fetch('/api/settings');
         const data = await resp.json();
-        cachedRate = data.electricity_rate || 0.12;
-        return cachedRate;
+        cachedRates = {
+            energy_rate: data.energy_rate || 0.08907,
+            demand_rate: data.demand_rate || 15.38,
+            base_service_charge: data.base_service_charge || 20.00,
+            tax_rate: data.tax_rate || 0.0672,
+        };
+        return cachedRates;
     } catch {
-        return 0.12;
+        return { energy_rate: 0.08907, demand_rate: 15.38, base_service_charge: 20, tax_rate: 0.0672 };
     }
 }
 

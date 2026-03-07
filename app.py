@@ -25,7 +25,12 @@ emporia_svc = EmporiaService(
     email=config.EMPORIA_EMAIL,
     password=config.EMPORIA_PASSWORD,
 )
-calculator = Calculator(electricity_rate=config.ELECTRICITY_RATE)
+calculator = Calculator(
+    energy_rate=config.ENERGY_RATE,
+    demand_rate=config.DEMAND_RATE,
+    base_service_charge=config.BASE_SERVICE_CHARGE,
+    tax_rate=config.TAX_RATE,
+)
 collector = DataCollector(
     pvs6_service=pvs6_svc,
     emporia_service=emporia_svc,
@@ -134,8 +139,6 @@ def api_summary():
     from datetime import datetime
     today = datetime.utcnow().strftime("%Y-%m-%d")
     daily = db.get_daily_summaries(start=today, end=today)
-    rate = float(db.get_config("electricity_rate", config.ELECTRICITY_RATE))
-
     if daily:
         d = daily[0]
         return jsonify({
@@ -145,14 +148,17 @@ def api_summary():
             "net_grid_kwh": d.get("net_grid_kwh", 0),
             "crypto_kwh": d.get("crypto_mining_kwh", 0),
             "non_crypto_kwh": d.get("non_crypto_house_kwh", 0),
-            "cost": d.get("electricity_cost", 0),
+            "energy_cost": d.get("electricity_cost", 0),
             "solar_savings": d.get("solar_savings", 0),
-            "rate": rate,
+            "energy_rate": calculator.energy_rate,
+            "demand_rate": calculator.demand_rate,
         })
     return jsonify({
         "date": today, "solar_kwh": 0, "consumption_kwh": 0,
         "net_grid_kwh": 0, "crypto_kwh": 0, "non_crypto_kwh": 0,
-        "cost": 0, "solar_savings": 0, "rate": rate,
+        "energy_cost": 0, "solar_savings": 0,
+        "energy_rate": calculator.energy_rate,
+        "demand_rate": calculator.demand_rate,
     })
 
 
@@ -190,6 +196,31 @@ def api_costs():
     })
 
 
+@app.route("/api/bill-estimate")
+def api_bill_estimate():
+    """Monthly bill estimate based on current usage, matching CORE Electric format."""
+    reading = collector.latest or db.get_latest_reading()
+    if not reading:
+        return jsonify(calculator.compute_monthly_estimate(0, 0))
+
+    avg_w = reading.get("house_consumption_w", 0) or 0
+    peak_kw = avg_w / 1000  # approximation from current reading
+
+    # If we have daily data, use actual peak
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    rows = db.get_daily_summaries(start=start)
+    if rows:
+        actual_peak = max((r.get("peak_consumption_w", 0) or 0 for r in rows), default=0)
+        if actual_peak > 0:
+            peak_kw = actual_peak / 1000
+        avg_w = sum(r.get("house_consumption_kwh", 0) or 0 for r in rows) / len(rows) * 1000 / 24
+
+    estimate = calculator.compute_monthly_estimate(avg_w, peak_kw)
+    return jsonify(estimate)
+
+
 # ---- Discovery API ----
 
 @app.route("/api/discovery/scan", methods=["POST"])
@@ -210,7 +241,10 @@ def api_settings_get():
         "pvs6_host": db.get_config("pvs6_host", config.PVS6_HOST),
         "pvs6_port": int(db.get_config("pvs6_port", config.PVS6_PORT)),
         "pvs6_use_https": db.get_config("pvs6_use_https", str(config.PVS6_USE_HTTPS).lower()) == "true",
-        "electricity_rate": float(db.get_config("electricity_rate", config.ELECTRICITY_RATE)),
+        "energy_rate": float(db.get_config("energy_rate", config.ENERGY_RATE)),
+        "demand_rate": float(db.get_config("demand_rate", config.DEMAND_RATE)),
+        "base_service_charge": float(db.get_config("base_service_charge", config.BASE_SERVICE_CHARGE)),
+        "tax_rate": float(db.get_config("tax_rate", config.TAX_RATE)),
         "crypto_circuit_ids": db.get_config("crypto_circuit_ids", ",".join(str(x) for x in config.CRYPTO_CIRCUIT_IDS)),
         "poll_interval": int(db.get_config("poll_interval", config.POLL_INTERVAL_SECONDS)),
         "discovery_subnet": db.get_config("discovery_subnet", config.DISCOVERY_SUBNET),
@@ -228,8 +262,8 @@ def api_settings_put():
 
     allowed_keys = [
         "pvs6_host", "pvs6_port", "pvs6_use_https",
-        "electricity_rate", "crypto_circuit_ids",
-        "poll_interval", "discovery_subnet",
+        "energy_rate", "demand_rate", "base_service_charge", "tax_rate",
+        "crypto_circuit_ids", "poll_interval", "discovery_subnet",
     ]
     for key in allowed_keys:
         if key in data:
@@ -260,8 +294,11 @@ def start_collector():
     db.init_db()
 
     # Seed runtime config from env defaults (only if not already set)
-    if not db.get_config("electricity_rate"):
-        db.set_config("electricity_rate", config.ELECTRICITY_RATE)
+    if not db.get_config("energy_rate"):
+        db.set_config("energy_rate", config.ENERGY_RATE)
+        db.set_config("demand_rate", config.DEMAND_RATE)
+        db.set_config("base_service_charge", config.BASE_SERVICE_CHARGE)
+        db.set_config("tax_rate", config.TAX_RATE)
     if not db.get_config("pvs6_host") and config.PVS6_HOST:
         db.set_config("pvs6_host", config.PVS6_HOST)
         db.set_config("pvs6_port", config.PVS6_PORT)

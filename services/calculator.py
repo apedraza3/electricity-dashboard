@@ -4,20 +4,24 @@ logger = logging.getLogger(__name__)
 
 
 class Calculator:
-    """Compute derived metrics from raw PVS6 + Emporia data."""
+    """Compute derived metrics from raw PVS6 + Emporia data.
 
-    def __init__(self, electricity_rate=0.12):
-        self.electricity_rate = electricity_rate
+    Supports CORE Electric Cooperative tiered billing:
+    - Energy charge: $/kWh for all consumption
+    - Demand charge: $/kW for peak demand in billing period
+    - Base service charge: flat monthly fee
+    - Tax rate: percentage applied to subtotal
+    """
+
+    def __init__(self, energy_rate=0.08907, demand_rate=15.38,
+                 base_service_charge=20.00, tax_rate=0.0672):
+        self.energy_rate = energy_rate        # $/kWh
+        self.demand_rate = demand_rate        # $/kW peak
+        self.base_service_charge = base_service_charge  # $/month flat
+        self.tax_rate = tax_rate              # decimal (6.72% = 0.0672)
 
     def compute_realtime(self, pvs6_data, emporia_data):
-        """Merge PVS6 and Emporia data into a single reading.
-
-        Args:
-            pvs6_data: dict from PVS6Service.get_both() or None
-            emporia_data: dict from EmporiaService.get_instant_usage() or None
-
-        Returns dict with all metrics in watts.
-        """
+        """Merge PVS6 and Emporia data into a single reading."""
         solar_w = 0
         house_w = 0
         crypto_w = 0
@@ -28,15 +32,13 @@ class Calculator:
             house_w = pvs6_data.get("consumption_w", 0) or 0
 
         if emporia_data:
+            # Emporia only monitors crypto mining circuits, not the whole house
             crypto_w = emporia_data.get("crypto_w", 0) or 0
             emporia_total_w = emporia_data.get("total_w", 0) or 0
 
-            # If PVS6 has no consumption data, use Emporia total as house consumption
-            if house_w == 0 and emporia_total_w > 0:
-                house_w = emporia_total_w
-
-        # Derived metrics
-        net_grid_w = house_w - solar_w  # positive = importing, negative = exporting
+        # PVS6 is the source of truth for house consumption
+        # Emporia only tells us how much of that is crypto mining
+        net_grid_w = house_w - solar_w
         non_crypto_w = house_w - crypto_w if house_w > crypto_w else 0
 
         return {
@@ -48,10 +50,40 @@ class Calculator:
             "emporia_total_w": round(emporia_total_w, 1),
         }
 
-    def compute_cost_per_hour(self, consumption_w):
-        """Calculate electricity cost per hour."""
-        kw = consumption_w / 1000
-        return round(kw * self.electricity_rate, 4)
+    def compute_energy_cost_per_hour(self, consumption_w):
+        """Energy charge component per hour ($/hr)."""
+        kwh = consumption_w / 1000
+        return round(kwh * self.energy_rate, 4)
+
+    def compute_demand_cost(self, peak_kw):
+        """Demand charge component for billing period."""
+        return round(peak_kw * self.demand_rate, 2)
+
+    def compute_monthly_estimate(self, avg_consumption_w, peak_kw):
+        """Estimate full monthly bill from current usage patterns.
+
+        Returns dict with line-item breakdown matching CORE Electric bill.
+        """
+        hours_in_month = 730  # avg
+        total_kwh = (avg_consumption_w / 1000) * hours_in_month
+
+        energy_charge = total_kwh * self.energy_rate
+        demand_charge = peak_kw * self.demand_rate
+        subtotal = self.base_service_charge + energy_charge + demand_charge
+        taxes = subtotal * self.tax_rate
+        total = subtotal + taxes
+
+        return {
+            "base_service_charge": self.base_service_charge,
+            "energy_kwh": round(total_kwh, 1),
+            "energy_charge": round(energy_charge, 2),
+            "peak_demand_kw": round(peak_kw, 2),
+            "demand_charge": round(demand_charge, 2),
+            "subtotal": round(subtotal, 2),
+            "taxes": round(taxes, 2),
+            "total_estimate": round(total, 2),
+            "effective_rate_per_kwh": round(total / total_kwh, 5) if total_kwh > 0 else 0,
+        }
 
     def compute_solar_offset(self, solar_w, consumption_w):
         """Calculate solar offset percentage."""
@@ -60,21 +92,11 @@ class Calculator:
         return round(min((solar_w / consumption_w) * 100, 100), 1)
 
     def compute_hourly_aggregation(self, readings):
-        """Aggregate a list of raw readings into hourly summary values.
-
-        Args:
-            readings: list of reading dicts from the DB
-
-        Returns dict with Wh values and averages.
-        """
+        """Aggregate raw readings into hourly summary values."""
         if not readings:
             return None
 
         n = len(readings)
-        # Each reading represents ~POLL_INTERVAL seconds of data
-        # Convert average watts to Wh: avg_W * (interval_hours)
-        # For 60s polls over an hour, we have ~60 readings
-        # Wh = avg_watts * 1 (hour)
 
         avg_solar = sum(r.get("solar_production_w", 0) or 0 for r in readings) / n
         avg_cons = sum(r.get("house_consumption_w", 0) or 0 for r in readings) / n
@@ -82,21 +104,19 @@ class Calculator:
         avg_grid = sum(r.get("net_grid_w", 0) or 0 for r in readings) / n
         avg_non_crypto = sum(r.get("non_crypto_house_w", 0) or 0 for r in readings) / n
 
-        # Wh = average watts * 1 hour
         solar_wh = avg_solar
         cons_wh = avg_cons
         grid_wh = avg_grid
         crypto_wh = avg_crypto
         non_crypto_wh = avg_non_crypto
 
-        # Cost for this hour
-        # Only charge for grid import (positive net_grid means importing)
+        # Energy cost for this hour (only grid import)
         grid_import_w = max(avg_grid, 0)
-        electricity_cost = (grid_import_w / 1000) * self.electricity_rate
+        electricity_cost = (grid_import_w / 1000) * self.energy_rate
 
-        # Solar savings = what we would have paid without solar
-        solar_used_w = min(avg_solar, avg_cons)  # solar actually offsetting consumption
-        solar_savings = (solar_used_w / 1000) * self.electricity_rate
+        # Solar savings = energy charge avoided
+        solar_used_w = min(avg_solar, avg_cons)
+        solar_savings = (solar_used_w / 1000) * self.energy_rate
 
         return {
             "solar_production_wh": round(solar_wh, 1),
@@ -112,13 +132,7 @@ class Calculator:
         }
 
     def compute_daily_aggregation(self, hourly_rows):
-        """Aggregate hourly summaries into a daily summary.
-
-        Args:
-            hourly_rows: list of hourly_summary dicts from DB
-
-        Returns dict with kWh values and peaks.
-        """
+        """Aggregate hourly summaries into a daily summary."""
         if not hourly_rows:
             return None
 
@@ -131,6 +145,7 @@ class Calculator:
         peak_solar = max((r.get("avg_solar_w", 0) or 0 for r in hourly_rows), default=0)
         peak_cons = max((r.get("avg_consumption_w", 0) or 0 for r in hourly_rows), default=0)
 
+        # Energy costs (sum of hourly energy charges)
         total_cost = sum(r.get("electricity_cost", 0) or 0 for r in hourly_rows)
         total_savings = sum(r.get("solar_savings", 0) or 0 for r in hourly_rows)
 
