@@ -83,48 +83,68 @@ class EmporiaService:
 
         try:
             from pyemvue.enums import Scale, Unit
+            from datetime import timedelta
 
-            device_gids = list(set(d.device_gid for d in self.devices))
-            usage_dict = self.vue.get_device_list_usage(
-                deviceGids=device_gids,
-                instant=datetime.utcnow(),
-                scale=Scale.SECOND.value,
-                unit=Unit.KWH.value,
-            )
+            now = datetime.utcnow()
+            start = now - timedelta(minutes=2)
+
+            # Collect individual circuit channels (skip combined mains like "1,2,3")
+            channel_list = []
+            for device in self.devices:
+                for ch in (device.channels or []):
+                    try:
+                        ch_num_int = int(ch.channel_num)
+                    except (ValueError, TypeError):
+                        continue
+                    if ch_num_int == 0:
+                        continue
+                    channel_list.append((device.device_gid, ch, ch_num_int))
 
             circuits = []
             total_w = 0
 
-            for gid, device_usage in usage_dict.items():
-                if not hasattr(device_usage, "channels"):
-                    continue
-                logger.info("Device %s channels: %s", gid,
-                            {k: getattr(v, 'usage', None) for k, v in device_usage.channels.items()})
-                for ch_num, channel in device_usage.channels.items():
-                    # Skip non-integer channel keys (e.g. "1,2,3" combined mains)
-                    try:
-                        ch_num_int = int(ch_num)
-                    except (ValueError, TypeError):
-                        continue
+            for device_gid, channel_obj, ch_num_int in channel_list:
+                try:
+                    chart_usage = self.vue.get_chart_usage(
+                        channel_obj,
+                        start,
+                        now,
+                        scale=Scale.MINUTE.value,
+                        unit=Unit.KWH.value,
+                    )
+                    # get_chart_usage returns (list_of_usage, start_time) or just list
+                    if isinstance(chart_usage, tuple):
+                        usage_list = chart_usage[0]
+                    else:
+                        usage_list = chart_usage
 
-                    if ch_num_int == 0:
-                        continue
+                    # Get the latest non-None value
+                    usage_kwh_per_min = 0
+                    if usage_list:
+                        for val in reversed(usage_list):
+                            if val is not None:
+                                usage_kwh_per_min = val
+                                break
 
-                    usage_kwh = channel.usage or 0
-                    # Scale.SECOND: kWh per second → watts = kWh/s * 3600 * 1000
-                    usage_w = usage_kwh * 3600 * 1000
+                    # kWh/min → watts: kWh/min * 60 * 1000
+                    usage_w = usage_kwh_per_min * 60 * 1000
+                except Exception as e:
+                    logger.debug("Channel %s chart fetch error: %s", ch_num_int, e)
+                    usage_w = 0
 
-                    name = channel.name or f"Channel {ch_num_int}"
-                    is_crypto = ch_num_int in crypto_circuit_ids
+                name = channel_obj.name or f"Channel {ch_num_int}"
+                is_crypto = ch_num_int in crypto_circuit_ids
 
-                    circuits.append({
-                        "channel_num": ch_num_int,
-                        "name": name,
-                        "usage_w": round(usage_w, 1),
-                        "is_crypto": is_crypto,
-                        "device_gid": gid,
-                    })
-                    total_w += usage_w
+                circuits.append({
+                    "channel_num": ch_num_int,
+                    "name": name,
+                    "usage_w": round(usage_w, 1),
+                    "is_crypto": is_crypto,
+                    "device_gid": device_gid,
+                })
+                total_w += usage_w
+
+            logger.info("Emporia: fetched %d circuits, total=%.1fW", len(circuits), total_w)
 
             crypto_w = sum(c["usage_w"] for c in circuits if c["is_crypto"])
             non_crypto_w = total_w - crypto_w
