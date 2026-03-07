@@ -105,6 +105,15 @@ class EmporiaService:
 
             for device_gid, channel_obj, ch_num_int in channel_list:
                 try:
+                    # Log channel object details for first channel
+                    if ch_num_int <= 2:
+                        logger.info("Channel %s obj: device_gid=%s, channel_num=%s, type=%s, attrs=%s",
+                                    ch_num_int,
+                                    getattr(channel_obj, 'device_gid', 'MISSING'),
+                                    getattr(channel_obj, 'channel_num', 'MISSING'),
+                                    type(channel_obj).__name__,
+                                    [a for a in dir(channel_obj) if not a.startswith('_')])
+
                     chart_usage = self.vue.get_chart_usage(
                         channel_obj,
                         start,
@@ -112,6 +121,11 @@ class EmporiaService:
                         scale=Scale.MINUTE.value,
                         unit=Unit.KWH.value,
                     )
+
+                    if ch_num_int <= 2:
+                        logger.info("Channel %s raw response: type=%s, value=%s",
+                                    ch_num_int, type(chart_usage).__name__, repr(chart_usage)[:500])
+
                     # get_chart_usage returns (list_of_usage, start_time) or just list
                     if isinstance(chart_usage, tuple):
                         usage_list = chart_usage[0]
