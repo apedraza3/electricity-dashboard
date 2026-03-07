@@ -84,46 +84,38 @@ class EmporiaService:
         try:
             from pyemvue.enums import Scale, Unit
 
-            device_gids = [d.device_gid for d in self.devices]
-            logger.info("Emporia devices: %s", [
-                {"gid": d.device_gid, "model": getattr(d, "model", "?"),
-                 "channels": [{"num": ch.channel_num, "name": ch.name}
-                              for ch in (d.channels or [])]}
-                for d in self.devices
-            ])
+            device_gids = list(set(d.device_gid for d in self.devices))
             usage_dict = self.vue.get_device_list_usage(
                 deviceGids=device_gids,
                 instant=datetime.utcnow(),
-                scale=Scale.MINUTE.value,
+                scale=Scale.SECOND.value,
                 unit=Unit.KWH.value,
             )
 
             circuits = []
             total_w = 0
 
-            logger.info("Emporia usage_dict keys: %s", list(usage_dict.keys()))
             for gid, device_usage in usage_dict.items():
                 if not hasattr(device_usage, "channels"):
-                    logger.info("Device %s has no channels attr", gid)
                     continue
-                logger.info("Device %s channel keys: %s", gid, list(device_usage.channels.keys()))
+                logger.info("Device %s channels: %s", gid,
+                            {k: getattr(v, 'usage', None) for k, v in device_usage.channels.items()})
                 for ch_num, channel in device_usage.channels.items():
-                    usage_kwh_per_min = channel.usage or 0
-                    # Convert kWh/minute to watts: kWh/min * 60 min/hr * 1000 W/kW
-                    usage_w = usage_kwh_per_min * 60 * 1000
-
                     # Skip non-integer channel keys (e.g. "1,2,3" combined mains)
                     try:
                         ch_num_int = int(ch_num)
                     except (ValueError, TypeError):
                         continue
 
-                    name = channel.name or f"Channel {ch_num_int}"
-                    is_crypto = ch_num_int in crypto_circuit_ids
-
-                    # Skip the "Balance" channel (channel_num 0) which is a virtual total
                     if ch_num_int == 0:
                         continue
+
+                    usage_kwh = channel.usage or 0
+                    # Scale.SECOND: kWh per second → watts = kWh/s * 3600 * 1000
+                    usage_w = usage_kwh * 3600 * 1000
+
+                    name = channel.name or f"Channel {ch_num_int}"
+                    is_crypto = ch_num_int in crypto_circuit_ids
 
                     circuits.append({
                         "channel_num": ch_num_int,
