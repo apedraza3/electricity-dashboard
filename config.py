@@ -20,6 +20,10 @@ PVS6_USE_HTTPS = os.getenv("PVS6_USE_HTTPS", "true").lower() == "true"
 EMPORIA_EMAIL = os.getenv("EMPORIA_EMAIL", "")
 EMPORIA_PASSWORD = os.getenv("EMPORIA_PASSWORD", "")
 
+# SunPower/SunStrong (cloud API - replaces local PVS6 when unavailable)
+SUNPOWER_EMAIL = os.getenv("SUNPOWER_EMAIL", "")
+SUNPOWER_PASSWORD = os.getenv("SUNPOWER_PASSWORD", "")
+
 # Electricity rates (CORE Electric Cooperative structure)
 ENERGY_RATE = float(os.getenv("ENERGY_RATE", "0.08907"))          # $/kWh energy charge
 DEMAND_RATE = float(os.getenv("DEMAND_RATE", "15.38"))            # $/kW demand charge (peak)

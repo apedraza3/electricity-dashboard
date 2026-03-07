@@ -6,6 +6,7 @@ import config
 from services import db
 from services.pvs6_service import PVS6Service
 from services.emporia_service import EmporiaService
+from services.sunpower_service import SunPowerService
 from services.calculator import Calculator
 from services.collector import DataCollector
 
@@ -25,6 +26,10 @@ emporia_svc = EmporiaService(
     email=config.EMPORIA_EMAIL,
     password=config.EMPORIA_PASSWORD,
 )
+sunpower_svc = SunPowerService(
+    email=config.SUNPOWER_EMAIL,
+    password=config.SUNPOWER_PASSWORD,
+)
 calculator = Calculator(
     energy_rate=config.ENERGY_RATE,
     demand_rate=config.DEMAND_RATE,
@@ -34,6 +39,7 @@ calculator = Calculator(
 collector = DataCollector(
     pvs6_service=pvs6_svc,
     emporia_service=emporia_svc,
+    sunpower_service=sunpower_svc,
     calculator=calculator,
     poll_interval=config.POLL_INTERVAL_SECONDS,
 )
