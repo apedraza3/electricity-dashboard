@@ -95,9 +95,12 @@ class EmporiaService:
             circuits = []
             total_w = 0
 
+            logger.info("Emporia usage_dict keys: %s", list(usage_dict.keys()))
             for gid, device_usage in usage_dict.items():
                 if not hasattr(device_usage, "channels"):
+                    logger.info("Device %s has no channels attr", gid)
                     continue
+                logger.info("Device %s channel keys: %s", gid, list(device_usage.channels.keys()))
                 for ch_num, channel in device_usage.channels.items():
                     usage_kwh_per_min = channel.usage or 0
                     # Convert kWh/minute to watts: kWh/min * 60 min/hr * 1000 W/kW
