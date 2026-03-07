@@ -81,16 +81,20 @@ def _probe_pvs6(host, port, use_https):
         try:
             resp = requests.get(url, timeout=5, verify=False)
             if resp.ok:
-                # Try to detect model from response
-                model = "PVS6"
+                # Must be JSON — skip HTML responses (routers, etc.)
+                content_type = resp.headers.get("Content-Type", "")
+                if "html" in content_type.lower():
+                    continue
                 try:
                     data = resp.json()
-                    if isinstance(data, dict):
-                        model = data.get("type", data.get("model", "PVS6"))
-                    elif isinstance(data, list) and len(data) > 0:
-                        model = data[0].get("type", "PVS6")
                 except Exception:
-                    pass
+                    continue
+
+                model = "PVS6"
+                if isinstance(data, dict):
+                    model = data.get("type", data.get("model", "PVS6"))
+                elif isinstance(data, list) and len(data) > 0:
+                    model = data[0].get("type", "PVS6")
 
                 logger.info("Found PVS6 at %s (endpoint: %s)", base, endpoint)
                 return {

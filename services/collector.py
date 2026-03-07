@@ -11,10 +11,9 @@ logger = logging.getLogger(__name__)
 class DataCollector:
     """Background polling thread that reads PVS6 + Emporia and writes to DB."""
 
-    def __init__(self, pvs6_service, emporia_service, calculator, poll_interval=60, sunpower_service=None):
+    def __init__(self, pvs6_service, emporia_service, calculator, poll_interval=60):
         self.pvs6 = pvs6_service
         self.emporia = emporia_service
-        self.sunpower = sunpower_service
         self.calc = calculator
         self.poll_interval = poll_interval
         self._thread = None
@@ -99,21 +98,10 @@ class DataCollector:
             pvs6_https = db.get_config("pvs6_use_https", "true") == "true"
             self.pvs6.update_config(pvs6_host, pvs6_port, pvs6_https)
 
-        # Fetch solar/consumption data: try PVS6 local first, then SunPower cloud
+        # Fetch solar/consumption data from PVS6 local API
         pvs6_data = None
         if self.pvs6.is_configured:
             pvs6_data = self.pvs6.get_both()
-
-        # If PVS6 returned no useful data, try SunPower cloud API
-        if self.sunpower and self.sunpower.is_configured:
-            has_pvs6_data = pvs6_data and (pvs6_data.get("production_w", 0) or pvs6_data.get("consumption_w", 0))
-            if not has_pvs6_data:
-                sp_data = self.sunpower.get_current_power()
-                if sp_data:
-                    pvs6_data = {
-                        "production_w": sp_data["production_w"],
-                        "consumption_w": sp_data["consumption_w"],
-                    }
 
         # Fetch Emporia data
         emporia_data = self.emporia.get_instant_usage(crypto_circuit_ids=crypto_ids)
