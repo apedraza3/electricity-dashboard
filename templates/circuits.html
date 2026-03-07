@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Circuits - Electricity Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="section-header">
+        <h2>Emporia Circuit Breakdown</h2>
+        <p class="text-muted">Real-time per-circuit power usage. Mark circuits as crypto to separate mining from house usage.</p>
+    </div>
+
+    <div class="chart-section">
+        <div class="chart-container chart-container-sm">
+            <canvas id="circuitChart"></canvas>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table" id="circuitTable">
+            <thead>
+                <tr>
+                    <th>Channel</th>
+                    <th>Name</th>
+                    <th>Usage (W)</th>
+                    <th>Crypto?</th>
+                </tr>
+            </thead>
+            <tbody id="circuitTableBody">
+                <tr><td colspan="4" class="text-muted">Loading circuits...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let circuitChart = null;
+
+async function loadCircuits() {
+    try {
+        const resp = await fetch('/api/circuits');
+        const data = await resp.json();
+        const tbody = document.getElementById('circuitTableBody');
+
+        if (!data.circuits || data.circuits.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No circuit data available. Configure Emporia credentials in .env</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.circuits.map(c => `
+            <tr class="${c.is_crypto ? 'crypto-row' : ''}">
+                <td>${c.channel_num}</td>
+                <td>${c.channel_name || 'Channel ' + c.channel_num}</td>
+                <td class="text-right">${(c.usage_w || 0).toFixed(1)} W</td>
+                <td>
+                    <input type="checkbox" class="crypto-toggle"
+                           data-channel="${c.channel_num}"
+                           ${c.is_crypto ? 'checked' : ''}
+                           onchange="toggleCrypto(${c.channel_num}, this.checked)">
+                </td>
+            </tr>
+        `).join('');
+
+        // Update chart
+        const labels = data.circuits.map(c => c.channel_name || 'Ch ' + c.channel_num);
+        const values = data.circuits.map(c => c.usage_w || 0);
+        const colors = data.circuits.map(c => c.is_crypto ? '#f59e0b' : '#3b82f6');
+        circuitChart = ElecCharts.bar('circuitChart', labels, values, colors, circuitChart);
+
+    } catch (err) {
+        console.error('Failed to load circuits:', err);
+    }
+}
+
+async function toggleCrypto(channelNum, isCrypto) {
+    const settings = await (await fetch('/api/settings')).json();
+    let ids = (settings.crypto_circuit_ids || '').split(',').filter(x => x);
+    const ch = String(channelNum);
+
+    if (isCrypto && !ids.includes(ch)) {
+        ids.push(ch);
+    } else if (!isCrypto) {
+        ids = ids.filter(x => x !== ch);
+    }
+
+    await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({crypto_circuit_ids: ids.join(',')}),
+    });
+    loadCircuits();
+}
+
+loadCircuits();
+setInterval(loadCircuits, 10000);
+</script>
+{% endblock %}

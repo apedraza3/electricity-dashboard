@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Electricity Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav class="tool-nav">
+        <span class="nav-brand">Electricity</span>
+        <a href="/" class="tool-nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/circuits" class="tool-nav-link {% if active_page == 'circuits' %}active{% endif %}">Circuits</a>
+        <a href="/history" class="tool-nav-link {% if active_page == 'history' %}active{% endif %}">History</a>
+        <a href="/discovery" class="tool-nav-link {% if active_page == 'discovery' %}active{% endif %}">PVS6 Discovery</a>
+        <a href="/settings" class="tool-nav-link {% if active_page == 'settings' %}active{% endif %}">Settings</a>
+    </nav>
+
+    {% block content %}{% endblock %}
+
+    <div class="loading-overlay" id="loadingOverlay" style="display:none;">
+        <div class="spinner"></div>
+        <p>Loading data...</p>
+    </div>
+
+    <script src="/static/js/charts.js?v=1"></script>
+    <script src="/static/js/dashboard.js?v=1"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

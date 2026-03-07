@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}History - Electricity Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="section-header">
+        <h2>Historical Energy Data</h2>
+        <div class="range-buttons">
+            <button class="btn btn-sm" onclick="loadRange('day')" id="btnDay">Today</button>
+            <button class="btn btn-sm active" onclick="loadRange('week')" id="btnWeek">7 Days</button>
+            <button class="btn btn-sm" onclick="loadRange('month')" id="btnMonth">30 Days</button>
+            <button class="btn btn-sm" onclick="loadRange('quarter')" id="btnQuarter">90 Days</button>
+        </div>
+    </div>
+
+    <!-- Cost summary cards -->
+    <div class="cards-row metrics-row">
+        <div class="card card-small">
+            <div class="card-label">Total Cost</div>
+            <div class="card-value card-value-sm" id="histCost">$--</div>
+        </div>
+        <div class="card card-small">
+            <div class="card-label">Solar Savings</div>
+            <div class="card-value card-value-sm" id="histSavings">$--</div>
+        </div>
+        <div class="card card-small">
+            <div class="card-label">Total Consumption</div>
+            <div class="card-value card-value-sm" id="histConsumption">-- kWh</div>
+        </div>
+        <div class="card card-small">
+            <div class="card-label">Crypto Usage</div>
+            <div class="card-value card-value-sm" id="histCrypto">-- kWh</div>
+        </div>
+    </div>
+
+    <!-- Production vs Consumption -->
+    <div class="chart-section">
+        <h3>Production vs Consumption</h3>
+        <div class="chart-container">
+            <canvas id="prodVsConsChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Net Grid -->
+    <div class="chart-section">
+        <h3>Net Grid Usage</h3>
+        <div class="chart-container">
+            <canvas id="netGridChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Crypto vs House -->
+    <div class="chart-section">
+        <h3>Crypto vs House Usage</h3>
+        <div class="chart-container">
+            <canvas id="cryptoVsHouseChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/history.js?v=1"></script>
+{% endblock %}

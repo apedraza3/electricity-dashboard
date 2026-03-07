@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/electricity.db
+data/*.db-journal
+data/*.db-wal
+.DS_Store

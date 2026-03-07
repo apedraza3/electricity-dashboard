@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Electricity Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <!-- Hero cards -->
+    <div class="cards-row hero-cards">
+        <div class="card card-solar">
+            <div class="card-label">Solar Production</div>
+            <div class="card-value" id="solarValue">-- kW</div>
+            <div class="card-sub" id="solarSub">PVS6 not configured</div>
+        </div>
+        <div class="card card-consumption">
+            <div class="card-label">House Consumption</div>
+            <div class="card-value" id="consumptionValue">-- kW</div>
+            <div class="card-sub" id="consumptionSub"></div>
+        </div>
+        <div class="card card-grid">
+            <div class="card-label">Net Grid</div>
+            <div class="card-value" id="gridValue">-- kW</div>
+            <div class="card-sub" id="gridSub">+ importing / - exporting</div>
+        </div>
+        <div class="card card-crypto">
+            <div class="card-label">Crypto Mining</div>
+            <div class="card-value" id="cryptoValue">-- kW</div>
+            <div class="card-sub" id="cryptoSub">Emporia circuits</div>
+        </div>
+    </div>
+
+    <!-- Metrics row -->
+    <div class="cards-row metrics-row">
+        <div class="card card-small">
+            <div class="card-label">Non-Crypto House</div>
+            <div class="card-value card-value-sm" id="nonCryptoValue">-- kW</div>
+        </div>
+        <div class="card card-small">
+            <div class="card-label">Cost / Hour</div>
+            <div class="card-value card-value-sm" id="costHrValue">$--</div>
+        </div>
+        <div class="card card-small">
+            <div class="card-label">Solar Offset</div>
+            <div class="card-value card-value-sm" id="solarOffsetValue">--%</div>
+        </div>
+        <div class="card card-small">
+            <div class="card-label">Today kWh</div>
+            <div class="card-value card-value-sm" id="todayKwhValue">--</div>
+        </div>
+    </div>
+
+    <!-- Live chart -->
+    <div class="chart-section">
+        <div class="section-header">
+            <h2>Live Power (Last Hour)</h2>
+            <div class="auto-refresh-toggle">
+                <input type="checkbox" id="autoRefresh" checked>
+                <label for="autoRefresh">Auto-refresh (10s)</label>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="liveChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Today summary chart -->
+    <div class="chart-section">
+        <div class="section-header">
+            <h2>Today's Energy</h2>
+        </div>
+        <div class="chart-container chart-container-sm">
+            <canvas id="todayChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Connecting...</span>
+        <span class="last-updated" id="lastUpdated"></span>
+    </div>
+</div>
+{% endblock %}

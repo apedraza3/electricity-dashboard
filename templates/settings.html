@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Settings - Electricity Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="section-header">
+        <h2>Settings</h2>
+    </div>
+
+    <div class="settings-grid">
+        <!-- PVS6 -->
+        <div class="settings-section">
+            <h3>SunPower PVS6</h3>
+            <div class="input-group">
+                <label for="pvs6Host">IP Address</label>
+                <input type="text" id="pvs6Host" class="input" placeholder="192.168.1.x">
+            </div>
+            <div class="input-group">
+                <label for="pvs6Port">Port</label>
+                <input type="number" id="pvs6Port" class="input" value="443">
+            </div>
+            <div class="input-group checkbox-group">
+                <input type="checkbox" id="pvs6Https" checked>
+                <label for="pvs6Https">Use HTTPS</label>
+            </div>
+            <button class="btn btn-sm" onclick="testPvs6()">Test Connection</button>
+            <span id="pvs6Status" class="status-inline"></span>
+        </div>
+
+        <!-- Emporia -->
+        <div class="settings-section">
+            <h3>Emporia Energy</h3>
+            <div class="status-inline" id="emporiaStatus">
+                Checking...
+            </div>
+            <p class="text-muted text-sm">Emporia credentials are set in the .env file for security.</p>
+        </div>
+
+        <!-- Electricity -->
+        <div class="settings-section">
+            <h3>Electricity Rate</h3>
+            <div class="input-group">
+                <label for="elecRate">$/kWh</label>
+                <input type="number" id="elecRate" class="input" step="0.01" value="0.12">
+            </div>
+        </div>
+
+        <!-- Polling -->
+        <div class="settings-section">
+            <h3>Polling Interval</h3>
+            <div class="input-group">
+                <label for="pollInterval">Seconds</label>
+                <input type="number" id="pollInterval" class="input" value="60" min="10" max="300">
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-actions">
+        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+        <span id="saveStatus" class="status-inline"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSettings() {
+    const resp = await fetch('/api/settings');
+    const s = await resp.json();
+
+    document.getElementById('pvs6Host').value = s.pvs6_host || '';
+    document.getElementById('pvs6Port').value = s.pvs6_port || 443;
+    document.getElementById('pvs6Https').checked = s.pvs6_use_https;
+    document.getElementById('elecRate').value = s.electricity_rate || 0.12;
+    document.getElementById('pollInterval').value = s.poll_interval || 60;
+
+    document.getElementById('emporiaStatus').textContent =
+        s.emporia_configured ? 'Configured (credentials in .env)' : 'Not configured - add EMPORIA_EMAIL and EMPORIA_PASSWORD to .env';
+    document.getElementById('emporiaStatus').className =
+        'status-inline ' + (s.emporia_configured ? 'status-ok' : 'status-warn');
+}
+
+async function saveSettings() {
+    const data = {
+        pvs6_host: document.getElementById('pvs6Host').value,
+        pvs6_port: parseInt(document.getElementById('pvs6Port').value),
+        pvs6_use_https: document.getElementById('pvs6Https').checked,
+        electricity_rate: parseFloat(document.getElementById('elecRate').value),
+        poll_interval: parseInt(document.getElementById('pollInterval').value),
+    };
+
+    const resp = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+    });
+
+    const status = document.getElementById('saveStatus');
+    if (resp.ok) {
+        status.textContent = 'Saved!';
+        status.className = 'status-inline status-ok';
+    } else {
+        status.textContent = 'Save failed';
+        status.className = 'status-inline status-err';
+    }
+    setTimeout(() => { status.textContent = ''; }, 3000);
+}
+
+async function testPvs6() {
+    const status = document.getElementById('pvs6Status');
+    status.textContent = 'Testing...';
+    status.className = 'status-inline';
+
+    // Save first, then check status
+    await saveSettings();
+    const resp = await fetch('/api/status');
+    const data = await resp.json();
+
+    if (data.pvs6_configured) {
+        status.textContent = 'Configured';
+        status.className = 'status-inline status-ok';
+    } else {
+        status.textContent = 'Not reachable';
+        status.className = 'status-inline status-err';
+    }
+}
+
+loadSettings();
+</script>
+{% endblock %}

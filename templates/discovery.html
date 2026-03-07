@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}PVS6 Discovery - Electricity Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="section-header">
+        <h2>SunPower PVS6 Discovery</h2>
+        <p class="text-muted">Scan your local network to find your PVS6 solar monitoring device.</p>
+    </div>
+
+    <div class="discovery-controls">
+        <div class="input-group">
+            <label for="subnet">Subnet to scan</label>
+            <input type="text" id="subnet" class="input" placeholder="192.168.1.0/24">
+        </div>
+        <button class="btn btn-primary" id="scanBtn" onclick="startScan()">Scan Network</button>
+    </div>
+
+    <div id="scanStatus" class="status-msg" style="display:none;"></div>
+
+    <div class="table-container">
+        <table class="data-table" id="discoveryTable">
+            <thead>
+                <tr>
+                    <th>IP Address</th>
+                    <th>Port</th>
+                    <th>HTTPS</th>
+                    <th>Model</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="discoveryTableBody">
+                <tr><td colspan="5" class="text-muted">No scan results yet. Click "Scan Network" to begin.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function startScan() {
+    const btn = document.getElementById('scanBtn');
+    const status = document.getElementById('scanStatus');
+    const subnet = document.getElementById('subnet').value || undefined;
+
+    btn.disabled = true;
+    btn.textContent = 'Scanning...';
+    status.style.display = 'block';
+    status.textContent = 'Scanning network... this may take 30-60 seconds.';
+    status.className = 'status-msg info';
+
+    try {
+        const resp = await fetch('/api/discovery/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({subnet}),
+        });
+        const data = await resp.json();
+        const tbody = document.getElementById('discoveryTableBody');
+
+        if (!data.results || data.results.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No PVS6 devices found on ' + data.subnet + '</td></tr>';
+            status.textContent = 'Scan complete. No devices found.';
+            status.className = 'status-msg warning';
+        } else {
+            tbody.innerHTML = data.results.map(r => `
+                <tr>
+                    <td>${r.ip}</td>
+                    <td>${r.port}</td>
+                    <td>${r.https ? 'Yes' : 'No'}</td>
+                    <td>${r.model || 'PVS6'}</td>
+                    <td><button class="btn btn-sm btn-primary" onclick="usePvs6('${r.ip}', ${r.port}, ${r.https})">Use This</button></td>
+                </tr>
+            `).join('');
+            status.textContent = 'Found ' + data.results.length + ' device(s)!';
+            status.className = 'status-msg success';
+        }
+    } catch (err) {
+        status.textContent = 'Scan failed: ' + err.message;
+        status.className = 'status-msg error';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Scan Network';
+    }
+}
+
+async function usePvs6(ip, port, https) {
+    await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pvs6_host: ip, pvs6_port: port, pvs6_use_https: https}),
+    });
+    const status = document.getElementById('scanStatus');
+    status.textContent = 'PVS6 configured: ' + ip + ':' + port;
+    status.className = 'status-msg success';
+    status.style.display = 'block';
+}
+
+// Load current subnet from settings
+fetch('/api/settings').then(r => r.json()).then(s => {
+    document.getElementById('subnet').value = s.discovery_subnet || '192.168.1.0/24';
+});
+</script>
+{% endblock %}
