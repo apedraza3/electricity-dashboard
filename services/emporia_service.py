@@ -65,131 +65,54 @@ class EmporiaService:
         ]
 
     def get_instant_usage(self, crypto_circuit_ids=None):
-        """Get real-time usage for all devices and channels.
+        """Get real-time usage from Emporia Vue monitoring the crypto sub-panel.
 
-        NOTE: Emporia only monitors crypto mining circuits, NOT the whole house.
-        The PVS6 handles total house consumption.
+        The Vue monitors the entire sub-panel mains (combined '1,2,3' channel).
+        All power on this sub-panel is crypto mining power.
 
         Returns dict with:
-            - total_w: total watts across all Emporia-monitored circuits
-            - crypto_w: sum of watts on circuits marked as crypto
-            - circuits: list of {channel_num, name, usage_w, is_crypto}
+            - total_w: total watts on the sub-panel
+            - crypto_w: same as total_w (entire sub-panel is crypto)
+            - circuits: list with one entry for the sub-panel mains
         """
         if not self.ensure_auth():
             return {"total_w": 0, "crypto_w": 0, "non_crypto_w": 0, "circuits": []}
 
-        if crypto_circuit_ids is None:
-            crypto_circuit_ids = []
-
         try:
             from pyemvue.enums import Scale, Unit
-            from datetime import timedelta
 
-            now = datetime.utcnow()
-            start = now - timedelta(minutes=2)
+            device_gids = list(set(d.device_gid for d in self.devices))
+            usage_dict = self.vue.get_device_list_usage(
+                deviceGids=device_gids,
+                instant=datetime.utcnow(),
+                scale=Scale.SECOND.value,
+                unit=Unit.KWH.value,
+            )
 
-            # Log full device/channel structure including nested devices
-            for device in self.devices:
-                logger.info("Device model=%s gid=%s", getattr(device, 'model', '?'), device.device_gid)
-                for ch in (device.channels or []):
-                    nested = getattr(ch, 'nested_devices', [])
-                    logger.info("  Ch %s name=%s multiplier=%s nested=%d",
-                                ch.channel_num, ch.name,
-                                getattr(ch, 'channel_multiplier', '?'),
-                                len(nested) if nested else 0)
-                    for nd in (nested or []):
-                        logger.info("    Nested: gid=%s model=%s channels=%s",
-                                    getattr(nd, 'device_gid', '?'), getattr(nd, 'model', '?'),
-                                    [c.channel_num for c in (getattr(nd, 'channels', []) or [])])
+            crypto_w = 0
+            for gid, device_usage in usage_dict.items():
+                if not hasattr(device_usage, "channels"):
+                    continue
+                for ch_num, channel in device_usage.channels.items():
+                    usage_kwh_per_sec = channel.usage or 0
+                    # kWh/s → watts = kWh/s * 3600 * 1000
+                    crypto_w += usage_kwh_per_sec * 3600 * 1000
 
-            # Collect circuit channels from all devices + nested devices
-            channel_list = []
-            for device in self.devices:
-                for ch in (device.channels or []):
-                    try:
-                        ch_num_int = int(ch.channel_num)
-                    except (ValueError, TypeError):
-                        # Check nested devices under combined mains channels
-                        for nd in (getattr(ch, 'nested_devices', []) or []):
-                            for nch in (getattr(nd, 'channels', []) or []):
-                                try:
-                                    nch_num = int(nch.channel_num)
-                                except (ValueError, TypeError):
-                                    continue
-                                if nch_num != 0:
-                                    channel_list.append((nd.device_gid, nch, nch_num))
-                        continue
-                    if ch_num_int == 0:
-                        continue
-                    channel_list.append((device.device_gid, ch, ch_num_int))
+            crypto_w = round(crypto_w, 1)
+            logger.debug("Emporia sub-panel: %.1fW", crypto_w)
 
-            circuits = []
-            total_w = 0
-
-            for device_gid, channel_obj, ch_num_int in channel_list:
-                try:
-                    # Log channel object details for first channel
-                    if ch_num_int <= 2:
-                        logger.info("Channel %s obj: device_gid=%s, channel_num=%s, type=%s, attrs=%s",
-                                    ch_num_int,
-                                    getattr(channel_obj, 'device_gid', 'MISSING'),
-                                    getattr(channel_obj, 'channel_num', 'MISSING'),
-                                    type(channel_obj).__name__,
-                                    [a for a in dir(channel_obj) if not a.startswith('_')])
-
-                    chart_usage = self.vue.get_chart_usage(
-                        channel_obj,
-                        start,
-                        now,
-                        scale=Scale.MINUTE.value,
-                        unit=Unit.KWH.value,
-                    )
-
-                    if ch_num_int <= 2:
-                        logger.info("Channel %s raw response: type=%s, value=%s",
-                                    ch_num_int, type(chart_usage).__name__, repr(chart_usage)[:500])
-
-                    # get_chart_usage returns (list_of_usage, start_time) or just list
-                    if isinstance(chart_usage, tuple):
-                        usage_list = chart_usage[0]
-                    else:
-                        usage_list = chart_usage
-
-                    # Get the latest non-None value
-                    usage_kwh_per_min = 0
-                    if usage_list:
-                        for val in reversed(usage_list):
-                            if val is not None:
-                                usage_kwh_per_min = val
-                                break
-
-                    # kWh/min → watts: kWh/min * 60 * 1000
-                    usage_w = usage_kwh_per_min * 60 * 1000
-                except Exception as e:
-                    logger.debug("Channel %s chart fetch error: %s", ch_num_int, e)
-                    usage_w = 0
-
-                name = channel_obj.name or f"Channel {ch_num_int}"
-                is_crypto = ch_num_int in crypto_circuit_ids
-
-                circuits.append({
-                    "channel_num": ch_num_int,
-                    "name": name,
-                    "usage_w": round(usage_w, 1),
-                    "is_crypto": is_crypto,
-                    "device_gid": device_gid,
-                })
-                total_w += usage_w
-
-            logger.info("Emporia: fetched %d circuits, total=%.1fW", len(circuits), total_w)
-
-            crypto_w = sum(c["usage_w"] for c in circuits if c["is_crypto"])
-            non_crypto_w = total_w - crypto_w
+            circuits = [{
+                "channel_num": 0,
+                "name": "Crypto Sub-Panel",
+                "usage_w": crypto_w,
+                "is_crypto": True,
+                "device_gid": device_gids[0] if device_gids else None,
+            }]
 
             return {
-                "total_w": round(total_w, 1),
-                "crypto_w": round(crypto_w, 1),
-                "non_crypto_w": round(non_crypto_w, 1),
+                "total_w": crypto_w,
+                "crypto_w": crypto_w,
+                "non_crypto_w": 0,
                 "circuits": circuits,
             }
 
