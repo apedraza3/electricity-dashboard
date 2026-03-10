@@ -11,10 +11,10 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "electricity.db"
 
-# PVS6 (SunPower solar inverter on LAN)
+# PVS6 (SunPower solar inverter via Pi Zero bridge on LAN)
 PVS6_HOST = os.getenv("PVS6_HOST", "")
-PVS6_PORT = int(os.getenv("PVS6_PORT", "443"))
-PVS6_USE_HTTPS = os.getenv("PVS6_USE_HTTPS", "true").lower() == "true"
+PVS6_PORT = int(os.getenv("PVS6_PORT", "80"))
+PVS6_USE_HTTPS = os.getenv("PVS6_USE_HTTPS", "false").lower() == "true"
 
 # Emporia Energy Vue (cloud API)
 EMPORIA_EMAIL = os.getenv("EMPORIA_EMAIL", "")
