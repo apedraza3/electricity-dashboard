@@ -132,6 +132,10 @@ class PVS6Service:
     def get_both(self):
         """Get both production and consumption in one API call.
 
+        The consumption meter (NET_CONSUMPTION_LOADSIDE) reads net grid flow,
+        not total house consumption. Positive = importing, negative = exporting.
+        Total house consumption = solar production + net grid reading.
+
         Returns: {"production_w": float, "consumption_w": float,
                   "production_today_wh": float, "consumption_today_wh": float}
         """
@@ -148,11 +152,15 @@ class PVS6Service:
         cons_meter = self._find_meter(devices, "PVS5-METER-C")
 
         production_w = self._meter_power_w(prod_meter)
-        consumption_w = self._meter_power_w(cons_meter)
+        net_grid_w = self._meter_power_w(cons_meter)
+
+        # Total house consumption = solar + net grid import
+        # Works in all cases: importing (grid>0), exporting (grid<0), night (solar=0)
+        consumption_w = production_w + net_grid_w
 
         logger.debug(
-            "PVS6: production=%.0fW consumption=%.0fW",
-            production_w, consumption_w,
+            "PVS6: production=%.0fW net_grid=%.0fW total_consumption=%.0fW",
+            production_w, net_grid_w, consumption_w,
         )
 
         return {
