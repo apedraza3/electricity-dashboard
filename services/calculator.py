@@ -144,6 +144,9 @@ class Calculator:
 
         peak_solar = max((r.get("avg_solar_w", 0) or 0 for r in hourly_rows), default=0)
         peak_cons = max((r.get("avg_consumption_w", 0) or 0 for r in hourly_rows), default=0)
+        # Peak net grid = max grid draw after solar offset (what the utility meter sees)
+        peak_grid = max((max(r.get("avg_consumption_w", 0) or 0, 0) - max(r.get("avg_solar_w", 0) or 0, 0) for r in hourly_rows), default=0)
+        peak_grid = max(peak_grid, 0)  # can't be negative
 
         # Energy costs (sum of hourly energy charges)
         total_cost = sum(r.get("electricity_cost", 0) or 0 for r in hourly_rows)
@@ -157,6 +160,7 @@ class Calculator:
             "non_crypto_house_kwh": round(non_crypto_kwh, 3),
             "peak_solar_w": round(peak_solar, 1),
             "peak_consumption_w": round(peak_cons, 1),
+            "peak_net_grid_w": round(peak_grid, 1),
             "electricity_cost": round(total_cost, 4),
             "solar_savings": round(total_savings, 4),
         }

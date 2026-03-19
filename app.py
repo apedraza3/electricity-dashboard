@@ -273,15 +273,21 @@ def api_bill_estimate():
         return jsonify(calculator.compute_monthly_estimate(0, 0))
 
     avg_w = reading.get("house_consumption_w", 0) or 0
-    peak_kw = avg_w / 1000  # approximation from current reading
+    # Use net grid (consumption - solar) since CORE Electric meters net demand
+    net_grid_w = reading.get("net_grid_w", 0) or 0
+    peak_kw = max(net_grid_w, 0) / 1000  # current reading as fallback
 
-    # If we have daily data, use actual peak
+    # If we have daily data, use actual peak net grid demand
     from datetime import datetime, timedelta
     now = datetime.utcnow()
     start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
     rows = db.get_daily_summaries(start=start)
     if rows:
-        actual_peak = max((r.get("peak_consumption_w", 0) or 0 for r in rows), default=0)
+        # Prefer peak_net_grid_w (new field); fall back to peak_consumption_w for old data
+        actual_peak = max(
+            (r.get("peak_net_grid_w") or r.get("peak_consumption_w", 0) or 0 for r in rows),
+            default=0
+        )
         if actual_peak > 0:
             peak_kw = actual_peak / 1000
         avg_w = sum(r.get("house_consumption_kwh", 0) or 0 for r in rows) / len(rows) * 1000 / 24
