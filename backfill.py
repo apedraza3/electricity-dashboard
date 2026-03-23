@@ -3,11 +3,10 @@ import sqlite3
 from datetime import datetime, timedelta
 from services.calculator import Calculator
 from services import db
-
-DB_PATH = db.DB_PATH
+import config
 
 def backfill():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(str(config.DB_PATH))
     conn.row_factory = sqlite3.Row
 
     # Get energy rate from config
