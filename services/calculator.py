@@ -119,14 +119,14 @@ class Calculator:
         solar_savings = (solar_used_w / 1000) * self.energy_rate
 
         return {
-            "solar_production_wh": round(solar_wh, 1),
-            "house_consumption_wh": round(cons_wh, 1),
+            "solar_wh": round(solar_wh, 1),
+            "house_wh": round(cons_wh, 1),
             "net_grid_wh": round(grid_wh, 1),
-            "crypto_mining_wh": round(crypto_wh, 1),
-            "non_crypto_house_wh": round(non_crypto_wh, 1),
-            "avg_solar_w": round(avg_solar, 1),
-            "avg_consumption_w": round(avg_cons, 1),
-            "avg_crypto_w": round(avg_crypto, 1),
+            "crypto_wh": round(crypto_wh, 1),
+            "non_crypto_wh": round(non_crypto_wh, 1),
+            "avg_solar": round(avg_solar, 1),
+            "avg_consumption": round(avg_cons, 1),
+            "avg_crypto": round(avg_crypto, 1),
             "electricity_cost": round(electricity_cost, 4),
             "solar_savings": round(solar_savings, 4),
         }
@@ -136,31 +136,31 @@ class Calculator:
         if not hourly_rows:
             return None
 
-        solar_kwh = sum(r.get("solar_production_wh", 0) or 0 for r in hourly_rows) / 1000
-        cons_kwh = sum(r.get("house_consumption_wh", 0) or 0 for r in hourly_rows) / 1000
-        grid_kwh = sum(r.get("net_grid_wh", 0) or 0 for r in hourly_rows) / 1000
-        crypto_kwh = sum(r.get("crypto_mining_wh", 0) or 0 for r in hourly_rows) / 1000
-        non_crypto_kwh = sum(r.get("non_crypto_house_wh", 0) or 0 for r in hourly_rows) / 1000
+        # Hourly rows come from DB with column names (solar_production_wh) or from compute (solar_wh)
+        def h(r, key, alt_key=None):
+            return r.get(key, 0) or (r.get(alt_key, 0) if alt_key else 0) or 0
 
-        peak_solar = max((r.get("avg_solar_w", 0) or 0 for r in hourly_rows), default=0)
-        peak_cons = max((r.get("avg_consumption_w", 0) or 0 for r in hourly_rows), default=0)
-        # Peak net grid = max grid draw after solar offset (what the utility meter sees)
-        peak_grid = max((max(r.get("avg_consumption_w", 0) or 0, 0) - max(r.get("avg_solar_w", 0) or 0, 0) for r in hourly_rows), default=0)
-        peak_grid = max(peak_grid, 0)  # can't be negative
+        solar_kwh = sum(h(r, "solar_production_wh", "solar_wh") for r in hourly_rows) / 1000
+        cons_kwh = sum(h(r, "house_consumption_wh", "house_wh") for r in hourly_rows) / 1000
+        grid_kwh = sum(h(r, "net_grid_wh") for r in hourly_rows) / 1000
+        crypto_kwh = sum(h(r, "crypto_mining_wh", "crypto_wh") for r in hourly_rows) / 1000
+        non_crypto_kwh = sum(h(r, "non_crypto_house_wh", "non_crypto_wh") for r in hourly_rows) / 1000
+
+        peak_solar = max((h(r, "avg_solar_w", "avg_solar") for r in hourly_rows), default=0)
+        peak_cons = max((h(r, "avg_consumption_w", "avg_consumption") for r in hourly_rows), default=0)
 
         # Energy costs (sum of hourly energy charges)
         total_cost = sum(r.get("electricity_cost", 0) or 0 for r in hourly_rows)
         total_savings = sum(r.get("solar_savings", 0) or 0 for r in hourly_rows)
 
         return {
-            "solar_production_kwh": round(solar_kwh, 3),
-            "house_consumption_kwh": round(cons_kwh, 3),
+            "solar_kwh": round(solar_kwh, 3),
+            "house_kwh": round(cons_kwh, 3),
             "net_grid_kwh": round(grid_kwh, 3),
-            "crypto_mining_kwh": round(crypto_kwh, 3),
-            "non_crypto_house_kwh": round(non_crypto_kwh, 3),
-            "peak_solar_w": round(peak_solar, 1),
-            "peak_consumption_w": round(peak_cons, 1),
-            "peak_net_grid_w": round(peak_grid, 1),
+            "crypto_kwh": round(crypto_kwh, 3),
+            "non_crypto_kwh": round(non_crypto_kwh, 3),
+            "peak_solar": round(peak_solar, 1),
+            "peak_consumption": round(peak_cons, 1),
             "electricity_cost": round(total_cost, 4),
             "solar_savings": round(total_savings, 4),
         }
