@@ -150,9 +150,10 @@ class DataCollector:
         hour_start = now.replace(minute=0, second=0, microsecond=0)
         hour_end = hour_start + timedelta(hours=1)
 
+        # Use space-separated format to match DB timestamp format (not ISO T-separator)
         readings = db.get_readings(
-            start=hour_start.isoformat(),
-            end=hour_end.isoformat(),
+            start=hour_start.strftime("%Y-%m-%d %H:%M:%S"),
+            end=hour_end.strftime("%Y-%m-%d %H:%M:%S"),
             limit=120,  # Max ~60 readings per hour at 60s interval
         )
 
@@ -161,18 +162,19 @@ class DataCollector:
 
         agg = self.calc.compute_hourly_aggregation(readings)
         if agg:
+            hour_start_str = hour_start.strftime("%Y-%m-%d %H:%M:%S")
             db.upsert_hourly_summary(
-                hour_start=hour_start.isoformat(),
+                hour_start=hour_start_str,
                 **agg,
             )
-            logger.debug("Hourly summary updated for %s", hour_start.isoformat())
+            logger.debug("Hourly summary updated for %s", hour_start_str)
 
     def _aggregate_daily(self):
         """Compute daily summary from hourly summaries for today."""
         now = datetime.utcnow()
         today = now.strftime("%Y-%m-%d")
-        today_start = today + "T00:00:00"
-        today_end = today + "T23:59:59"
+        today_start = today + " 00:00:00"
+        today_end = today + " 23:59:59"
 
         hourly_rows = db.get_hourly_summaries(start=today_start, end=today_end)
         if not hourly_rows:
