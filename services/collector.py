@@ -145,42 +145,47 @@ class DataCollector:
         )
 
     def _aggregate_hourly(self):
-        """Compute hourly summary from raw readings for the current hour."""
+        """Compute hourly summaries, backfilling any missed hours."""
         now = datetime.utcnow()
-        hour_start = now.replace(minute=0, second=0, microsecond=0)
-        hour_end = hour_start + timedelta(hours=1)
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
 
-        # Use space-separated format to match DB timestamp format (not ISO T-separator)
-        readings = db.get_readings(
-            start=hour_start.strftime("%Y-%m-%d %H:%M:%S"),
-            end=hour_end.strftime("%Y-%m-%d %H:%M:%S"),
-            limit=120,  # Max ~60 readings per hour at 60s interval
-        )
+        # Backfill up to 24 missed hours
+        for hours_ago in range(24, -1, -1):
+            hour_start = current_hour - timedelta(hours=hours_ago)
+            hour_end = hour_start + timedelta(hours=1)
 
-        if not readings:
-            return
+            # Skip future hours
+            if hour_start > current_hour:
+                continue
 
-        agg = self.calc.compute_hourly_aggregation(readings)
-        if agg:
-            hour_start_str = hour_start.strftime("%Y-%m-%d %H:%M:%S")
-            db.upsert_hourly_summary(
-                hour_start=hour_start_str,
-                **agg,
-            )
-            logger.debug("Hourly summary updated for %s", hour_start_str)
+            start_str = hour_start.strftime("%Y-%m-%d %H:%M:%S")
+            end_str = hour_end.strftime("%Y-%m-%d %H:%M:%S")
+
+            readings = db.get_readings(start=start_str, end=end_str, limit=120)
+            if not readings:
+                continue
+
+            agg = self.calc.compute_hourly_aggregation(readings)
+            if agg:
+                db.upsert_hourly_summary(hour_start=start_str, **agg)
+
+        logger.debug("Hourly aggregation complete (with backfill)")
 
     def _aggregate_daily(self):
-        """Compute daily summary from hourly summaries for today."""
+        """Compute daily summaries, backfilling yesterday too."""
         now = datetime.utcnow()
-        today = now.strftime("%Y-%m-%d")
-        today_start = today + " 00:00:00"
-        today_end = today + " 23:59:59"
 
-        hourly_rows = db.get_hourly_summaries(start=today_start, end=today_end)
-        if not hourly_rows:
-            return
+        # Process yesterday and today
+        for days_ago in range(1, -1, -1):
+            day = (now - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+            day_start = day + " 00:00:00"
+            day_end = day + " 23:59:59"
 
-        agg = self.calc.compute_daily_aggregation(hourly_rows)
-        if agg:
-            db.upsert_daily_summary(date_str=today, **agg)
-            logger.debug("Daily summary updated for %s", today)
+            hourly_rows = db.get_hourly_summaries(start=day_start, end=day_end)
+            if not hourly_rows:
+                continue
+
+            agg = self.calc.compute_daily_aggregation(hourly_rows)
+            if agg:
+                db.upsert_daily_summary(date_str=day, **agg)
+                logger.debug("Daily summary updated for %s", day)

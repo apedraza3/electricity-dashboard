@@ -12,8 +12,10 @@ def backfill():
     # Get energy rate from config
     rate_row = conn.execute("SELECT value FROM config WHERE key='energy_rate'").fetchone()
     energy_rate = float(rate_row["value"]) if rate_row else 0.08907
+    demand_row = conn.execute("SELECT value FROM config WHERE key='demand_rate'").fetchone()
+    demand_rate = float(demand_row["value"]) if demand_row else 15.38
 
-    calc = Calculator(energy_rate=energy_rate)
+    calc = Calculator(energy_rate=energy_rate, demand_rate=demand_rate)
 
     # Find date range of existing readings
     bounds = conn.execute(

@@ -114,9 +114,13 @@ class Calculator:
         grid_import_w = max(avg_grid, 0)
         electricity_cost = (grid_import_w / 1000) * self.energy_rate
 
-        # Solar savings = energy charge avoided
+        # Solar savings = energy charge avoided + demand charge reduction (hourly share)
         solar_used_w = min(avg_solar, avg_cons)
-        solar_savings = (solar_used_w / 1000) * self.energy_rate
+        energy_savings = (solar_used_w / 1000) * self.energy_rate
+        # Demand savings: solar reduces peak grid draw. Spread monthly demand savings
+        # across hours proportionally. ~720 hours/month, solar reduces peak by solar_used kW.
+        demand_savings = (solar_used_w / 1000) * self.demand_rate / 720
+        solar_savings = energy_savings + demand_savings
 
         return {
             "solar_wh": round(solar_wh, 1),
