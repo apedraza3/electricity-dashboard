@@ -251,6 +251,7 @@ def api_costs():
     total_solar_savings = sum(r.get("solar_savings", 0) or 0 for r in rows)
     total_consumption = sum(r.get("house_consumption_kwh", 0) or 0 for r in rows)
     total_crypto = sum(r.get("crypto_mining_kwh", 0) or 0 for r in rows)
+    total_solar = sum(r.get("solar_production_kwh", 0) or 0 for r in rows)
 
     return jsonify({
         "period": period,
@@ -260,6 +261,7 @@ def api_costs():
         "total_solar_savings": round(total_solar_savings, 2),
         "total_consumption_kwh": round(total_consumption, 2),
         "total_crypto_kwh": round(total_crypto, 2),
+        "total_solar_kwh": round(total_solar, 2),
         "days": len(rows),
     })
 
