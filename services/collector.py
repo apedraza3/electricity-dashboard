@@ -82,7 +82,8 @@ class DataCollector:
         crypto_ids = [int(x.strip()) for x in crypto_ids_str.split(",") if x.strip()]
 
         # Update rate structure from runtime config
-        for attr, key in [("energy_rate", "energy_rate"), ("demand_rate", "demand_rate"),
+        for attr, key in [("energy_rate", "energy_rate"), ("wpca_rate", "wpca_rate"),
+                          ("demand_rate", "demand_rate"),
                           ("base_service_charge", "base_service_charge"), ("tax_rate", "tax_rate")]:
             val = db.get_config(key)
             if val:
@@ -98,13 +99,17 @@ class DataCollector:
             pvs6_https = db.get_config("pvs6_use_https", "true") == "true"
             self.pvs6.update_config(pvs6_host, pvs6_port, pvs6_https)
 
-        # Fetch solar/consumption data from PVS6 local API
+        # Fetch solar/consumption data from PVS6 local API (None = unavailable)
         pvs6_data = None
         if self.pvs6.is_configured:
             pvs6_data = self.pvs6.get_both()
 
-        # Fetch Emporia data
+        # Fetch Emporia data (None = unavailable)
         emporia_data = self.emporia.get_instant_usage(crypto_circuit_ids=crypto_ids)
+
+        if pvs6_data is None and emporia_data is None:
+            logger.warning("Poll #%d: no source responded; skipping reading", self._poll_count)
+            return
 
         # Compute merged metrics
         metrics = self.calc.compute_realtime(pvs6_data, emporia_data)
@@ -120,7 +125,7 @@ class DataCollector:
         )
 
         # Write per-circuit data
-        circuits = emporia_data.get("circuits", [])
+        circuits = (emporia_data or {}).get("circuits", [])
         for circuit in circuits:
             is_crypto = int(circuit["channel_num"]) in crypto_ids
             db.insert_circuit_reading(
@@ -136,7 +141,7 @@ class DataCollector:
         self._latest_circuits = circuits
 
         logger.debug(
-            "Poll #%d: solar=%.0fW cons=%.0fW crypto=%.0fW grid=%.0fW",
+            "Poll #%d: solar=%sW cons=%sW crypto=%sW grid=%sW",
             self._poll_count,
             metrics["solar_production_w"],
             metrics["house_consumption_w"],

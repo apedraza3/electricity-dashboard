@@ -3,3 +3,4 @@ requests==2.32.3
 python-dotenv==1.1.0
 pyemvue==0.18.5
 bcrypt==4.2.1
+tzdata==2025.2

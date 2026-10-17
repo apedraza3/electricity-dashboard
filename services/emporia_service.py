@@ -64,6 +64,12 @@ class EmporiaService:
             for d in (self.devices or [])
         ]
 
+    # Emporia channel numbers: "1,2,3" is the mains total; branch circuits are "1".."16";
+    # the cloud may also return "Balance" (mains minus branches) and, on solar sites,
+    # "MainsFromGrid"/"MainsToGrid". Summing every channel double-counts.
+    MAINS_CHANNEL = "1,2,3"
+    NON_CIRCUIT_CHANNELS = {"1,2,3", "Balance", "MainsFromGrid", "MainsToGrid"}
+
     def get_instant_usage(self, crypto_circuit_ids=None):
         """Get real-time usage from Emporia Vue monitoring the crypto sub-panel.
 
@@ -74,9 +80,10 @@ class EmporiaService:
             - total_w: total watts on the sub-panel
             - crypto_w: same as total_w (entire sub-panel is crypto)
             - circuits: list with one entry for the sub-panel mains
+        or None if Emporia is unconfigured or the request failed ("no data", not 0 W).
         """
         if not self.ensure_auth():
-            return {"total_w": 0, "crypto_w": 0, "non_crypto_w": 0, "circuits": []}
+            return None
 
         try:
             from pyemvue.enums import Scale, Unit
@@ -90,13 +97,27 @@ class EmporiaService:
             )
 
             crypto_w = 0
+            got_channel = False
             for gid, device_usage in usage_dict.items():
                 if not hasattr(device_usage, "channels"):
                     continue
-                for ch_num, channel in device_usage.channels.items():
-                    usage_kwh_per_sec = channel.usage or 0
-                    # kWh/s → watts = kWh/s * 3600 * 1000
-                    crypto_w += usage_kwh_per_sec * 3600 * 1000
+                channels = device_usage.channels
+                if self.MAINS_CHANNEL in channels:
+                    selected = [channels[self.MAINS_CHANNEL]]
+                else:
+                    # No mains channel reported: fall back to branch circuits only
+                    selected = [c for num, c in channels.items()
+                                if num not in self.NON_CIRCUIT_CHANNELS]
+                for channel in selected:
+                    if channel.usage is None:
+                        continue
+                    got_channel = True
+                    # kWh over one second → watts = kWh/s * 3600 * 1000
+                    crypto_w += channel.usage * 3600 * 1000
+
+            if not got_channel:
+                logger.warning("Emporia returned no usable channel data")
+                return None
 
             crypto_w = round(crypto_w, 1)
             logger.debug("Emporia sub-panel: %.1fW", crypto_w)
@@ -120,7 +141,7 @@ class EmporiaService:
             logger.error("Emporia usage fetch failed: %s", e)
             # Try re-auth on next call
             self._authenticated = False
-            return {"total_w": 0, "crypto_w": 0, "non_crypto_w": 0, "circuits": []}
+            return None
 
     def get_usage_for_range(self, start, end, scale="DAY", unit="KWH"):
         """Get historical usage for a date range.

@@ -44,7 +44,11 @@
                 <input type="number" id="energyRate" class="input" step="0.00001" value="0.08907">
             </div>
             <div class="input-group">
-                <label for="demandRate">Demand Charge ($/kW peak)</label>
+                <label for="wpcaRate">Wholesale Power Cost Adj ($/kWh, changes quarterly)</label>
+                <input type="number" id="wpcaRate" class="input" step="0.00001" value="0.00379">
+            </div>
+            <div class="input-group">
+                <label for="demandRate">Demand Charge ($/kW, highest 60-min average, any hour)</label>
                 <input type="number" id="demandRate" class="input" step="0.01" value="15.38">
             </div>
             <div class="input-group">
@@ -53,7 +57,7 @@
             </div>
             <div class="input-group">
                 <label for="taxRate">Tax + Franchise Rate (%)</label>
-                <input type="number" id="taxRate" class="input" step="0.01" value="6.72">
+                <input type="number" id="taxRate" class="input" step="0.01" value="6.70">
             </div>
         </div>
 
@@ -84,9 +88,10 @@ async function loadSettings() {
     document.getElementById('pvs6Port').value = s.pvs6_port || 443;
     document.getElementById('pvs6Https').checked = s.pvs6_use_https;
     document.getElementById('energyRate').value = s.energy_rate || 0.08907;
+    document.getElementById('wpcaRate').value = s.wpca_rate ?? 0.00379;
     document.getElementById('demandRate').value = s.demand_rate || 15.38;
     document.getElementById('baseCharge').value = s.base_service_charge || 20.00;
-    document.getElementById('taxRate').value = ((s.tax_rate || 0.0672) * 100).toFixed(2);
+    document.getElementById('taxRate').value = ((s.tax_rate || 0.067) * 100).toFixed(2);
     document.getElementById('pollInterval').value = s.poll_interval || 60;
 
     document.getElementById('emporiaStatus').textContent =
@@ -101,6 +106,7 @@ async function saveSettings() {
         pvs6_port: parseInt(document.getElementById('pvs6Port').value),
         pvs6_use_https: document.getElementById('pvs6Https').checked,
         energy_rate: parseFloat(document.getElementById('energyRate').value),
+        wpca_rate: parseFloat(document.getElementById('wpcaRate').value),
         demand_rate: parseFloat(document.getElementById('demandRate').value),
         base_service_charge: parseFloat(document.getElementById('baseCharge').value),
         tax_rate: parseFloat(document.getElementById('taxRate').value) / 100,

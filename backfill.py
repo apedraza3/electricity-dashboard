@@ -13,9 +13,14 @@ def backfill():
     rate_row = conn.execute("SELECT value FROM config WHERE key='energy_rate'").fetchone()
     energy_rate = float(rate_row["value"]) if rate_row else 0.08907
     demand_row = conn.execute("SELECT value FROM config WHERE key='demand_rate'").fetchone()
-    demand_rate = float(demand_row["value"]) if demand_row else 15.38
+    demand_rate = float(demand_row["value"]) if demand_row else config.DEMAND_RATE
+    wpca_row = conn.execute("SELECT value FROM config WHERE key='wpca_rate'").fetchone()
+    wpca_rate = float(wpca_row["value"]) if wpca_row else config.WPCA_RATE
+    tax_row = conn.execute("SELECT value FROM config WHERE key='tax_rate'").fetchone()
+    tax_rate = float(tax_row["value"]) if tax_row else config.TAX_RATE
 
-    calc = Calculator(energy_rate=energy_rate, demand_rate=demand_rate)
+    calc = Calculator(energy_rate=energy_rate, demand_rate=demand_rate,
+                      wpca_rate=wpca_rate, tax_rate=tax_rate)
 
     # Find date range of existing readings
     bounds = conn.execute(

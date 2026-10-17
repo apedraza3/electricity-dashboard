@@ -24,13 +24,17 @@ EMPORIA_PASSWORD = os.getenv("EMPORIA_PASSWORD", "")
 SUNPOWER_EMAIL = os.getenv("SUNPOWER_EMAIL", "")
 SUNPOWER_PASSWORD = os.getenv("SUNPOWER_PASSWORD", "")
 
-# Electricity rates (CORE Electric Cooperative structure)
+# Electricity rates — CORE Electric Cooperative "Residential Demand" (Schedule C).
+# Values from the Sep 2026 bill (billed 2026-10-06). Schedule C bills demand on the
+# highest 60-minute average kW at ANY hour of the month (not just 4-8 PM).
 ENERGY_RATE = float(os.getenv("ENERGY_RATE", "0.08907"))          # $/kWh energy charge
-DEMAND_RATE = float(os.getenv("DEMAND_RATE", "15.38"))            # $/kW demand charge (peak)
+WPCA_RATE = float(os.getenv("WPCA_RATE", "0.00379"))              # $/kWh wholesale power cost adj (changes quarterly)
+DEMAND_RATE = float(os.getenv("DEMAND_RATE", "15.38"))            # $/kW demand charge (monthly max 60-min avg)
 BASE_SERVICE_CHARGE = float(os.getenv("BASE_SERVICE_CHARGE", "20.00"))  # flat monthly fee
-TAX_RATE = float(os.getenv("TAX_RATE", "0.0672"))                # combined tax+franchise % (~6.72%)
-# Legacy fallback (effective blended rate)
-ELECTRICITY_RATE = float(os.getenv("ELECTRICITY_RATE", "0.133"))
+TAX_RATE = float(os.getenv("TAX_RATE", "0.067"))                 # Castle Rock city tax 4.20% + franchise fee 2.50%
+
+# Local timezone for billing-period boundaries (CORE reads meters around the 1st)
+LOCAL_TIMEZONE = os.getenv("LOCAL_TIMEZONE", "America/Denver")
 
 # Crypto circuit IDs (comma-separated Emporia channel numbers)
 CRYPTO_CIRCUIT_IDS = [

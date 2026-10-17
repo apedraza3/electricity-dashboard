@@ -137,19 +137,20 @@ class PVS6Service:
         Total house consumption = solar production + net grid reading.
 
         Returns: {"production_w": float, "consumption_w": float,
-                  "production_today_wh": float, "consumption_today_wh": float}
+                  "production_today_wh": float, "consumption_today_wh": float},
+        or None if the PVS6 didn't answer or a meter is missing. Callers must treat
+        None as "no data", never as 0 W. (PVS6 firmware build 61839+ returns 403 on
+        dl_cgi without a login, which lands here.)
         """
         devices = self._fetch_devices()
         if devices is None:
-            return {
-                "production_w": 0,
-                "consumption_w": 0,
-                "production_today_wh": 0,
-                "consumption_today_wh": 0,
-            }
+            return None
 
         prod_meter = self._find_meter(devices, "PVS5-METER-P")
         cons_meter = self._find_meter(devices, "PVS5-METER-C")
+        if not prod_meter or not cons_meter:
+            logger.warning("PVS6: production or consumption meter missing from DeviceList")
+            return None
 
         production_w = self._meter_power_w(prod_meter)
         net_grid_w = self._meter_power_w(cons_meter)

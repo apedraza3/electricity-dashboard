@@ -52,6 +52,7 @@ emporia_svc = EmporiaService(
 )
 calculator = Calculator(
     energy_rate=config.ENERGY_RATE,
+    wpca_rate=config.WPCA_RATE,
     demand_rate=config.DEMAND_RATE,
     base_service_charge=config.BASE_SERVICE_CHARGE,
     tax_rate=config.TAX_RATE,
@@ -217,16 +218,26 @@ def api_summary():
             "non_crypto_kwh": d.get("non_crypto_house_kwh", 0),
             "energy_cost": d.get("electricity_cost", 0),
             "solar_savings": d.get("solar_savings", 0),
-            "energy_rate": calculator.energy_rate,
-            "demand_rate": calculator.demand_rate,
+            **_rate_fields(),
         })
     return jsonify({
         "date": today, "solar_kwh": 0, "consumption_kwh": 0,
         "net_grid_kwh": 0, "crypto_kwh": 0, "non_crypto_kwh": 0,
         "energy_cost": 0, "solar_savings": 0,
-        "energy_rate": calculator.energy_rate,
-        "demand_rate": calculator.demand_rate,
+        **_rate_fields(),
     })
+
+
+def _rate_fields():
+    """Rate structure as the collector currently applies it."""
+    return {
+        "energy_rate": calculator.energy_rate,
+        "wpca_rate": calculator.wpca_rate,
+        "demand_rate": calculator.demand_rate,
+        "tax_rate": calculator.tax_rate,
+        "marginal_energy_rate": round(calculator.marginal_energy_rate, 5),
+        "demand_rate_with_tax": round(calculator.demand_rate_with_tax, 2),
+    }
 
 
 @app.route("/api/costs")
@@ -266,35 +277,60 @@ def api_costs():
     })
 
 
+def _billing_period_bounds(now_utc):
+    """Approximate CORE's billing cycle as the local calendar month (meters are read
+    around the 1st). Returns (start_utc_naive, hours_in_period)."""
+    from datetime import timedelta, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(config.LOCAL_TIMEZONE)
+    except Exception:
+        logger.warning("Timezone %s unavailable; using UTC month", config.LOCAL_TIMEZONE)
+        tz = timezone.utc
+    local_now = now_utc.replace(tzinfo=timezone.utc).astimezone(tz)
+    start_local = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_local = (start_local + timedelta(days=32)).replace(day=1)
+    hours = (next_local - start_local).total_seconds() / 3600
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return start_utc, hours
+
+
 @app.route("/api/bill-estimate")
 @login_required
 def api_bill_estimate():
-    """Monthly bill estimate based on current usage, matching CORE Electric format."""
-    reading = collector.latest or db.get_latest_reading()
-    if not reading:
-        return jsonify(calculator.compute_monthly_estimate(0, 0))
+    """Monthly bill estimate for the current billing period, matching CORE Electric format.
 
-    avg_w = reading.get("house_consumption_w", 0) or 0
-    # Use net grid (consumption - solar) since CORE Electric meters net demand
-    net_grid_w = reading.get("net_grid_w", 0) or 0
-    peak_kw = max(net_grid_w, 0) / 1000  # current reading as fallback
-
-    # If we have daily data, use actual peak net grid demand
-    from datetime import datetime, timedelta
+    Energy: CORE bills the Net register (consumption minus export), so this projects
+    month-to-date net grid kWh to the full period.
+    Demand: highest clock-hour average grid import this period. CORE bills the highest
+    60-minute average at any hour, possibly on a rolling window, so this is a lower bound.
+    """
+    from datetime import datetime
     now = datetime.utcnow()
-    start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-    rows = db.get_daily_summaries(start=start)
-    if rows:
-        # Prefer peak_net_grid_w (new field); fall back to peak_consumption_w for old data
-        actual_peak = max(
-            (r.get("peak_net_grid_w") or r.get("peak_consumption_w", 0) or 0 for r in rows),
-            default=0
-        )
-        if actual_peak > 0:
-            peak_kw = actual_peak / 1000
-        avg_w = sum(r.get("house_consumption_kwh", 0) or 0 for r in rows) / len(rows) * 1000 / 24
+    period_start, period_hours = _billing_period_bounds(now)
+    rows = db.get_hourly_summaries(start=period_start.strftime("%Y-%m-%d %H:%M:%S"))
+    grid_rows = [r for r in rows if r.get("net_grid_wh") is not None]
 
-    estimate = calculator.compute_monthly_estimate(avg_w, peak_kw)
+    if grid_rows:
+        measured_kwh = sum(r["net_grid_wh"] for r in grid_rows) / 1000
+        projected_kwh = measured_kwh / len(grid_rows) * period_hours
+        peak_kw = max(max(r["net_grid_wh"], 0) for r in grid_rows) / 1000
+    else:
+        # No hourly data yet this period: fall back to the latest reading
+        reading = collector.latest or db.get_latest_reading() or {}
+        net_grid_w = reading.get("net_grid_w") or 0
+        measured_kwh = 0
+        projected_kwh = max(net_grid_w, 0) / 1000 * period_hours
+        peak_kw = max(net_grid_w, 0) / 1000
+
+    estimate = calculator.compute_monthly_estimate(projected_kwh, peak_kw)
+    estimate.update({
+        "period_start_utc": period_start.isoformat(),
+        "hours_measured": len(grid_rows),
+        "hours_in_period": round(period_hours, 1),
+        "measured_net_kwh": round(measured_kwh, 1),
+        "peak_basis": "max clock-hour average grid import (lower bound of CORE 60-min demand)",
+    })
     return jsonify(estimate)
 
 
@@ -321,6 +357,7 @@ def api_settings_get():
         "pvs6_port": int(db.get_config("pvs6_port", config.PVS6_PORT)),
         "pvs6_use_https": db.get_config("pvs6_use_https", str(config.PVS6_USE_HTTPS).lower()) == "true",
         "energy_rate": float(db.get_config("energy_rate", config.ENERGY_RATE)),
+        "wpca_rate": float(db.get_config("wpca_rate", config.WPCA_RATE)),
         "demand_rate": float(db.get_config("demand_rate", config.DEMAND_RATE)),
         "base_service_charge": float(db.get_config("base_service_charge", config.BASE_SERVICE_CHARGE)),
         "tax_rate": float(db.get_config("tax_rate", config.TAX_RATE)),
@@ -342,7 +379,7 @@ def api_settings_put():
 
     allowed_keys = [
         "pvs6_host", "pvs6_port", "pvs6_use_https",
-        "energy_rate", "demand_rate", "base_service_charge", "tax_rate",
+        "energy_rate", "wpca_rate", "demand_rate", "base_service_charge", "tax_rate",
         "crypto_circuit_ids", "poll_interval", "discovery_subnet",
     ]
     for key in allowed_keys:
@@ -506,6 +543,8 @@ def start_collector():
         db.set_config("demand_rate", config.DEMAND_RATE)
         db.set_config("base_service_charge", config.BASE_SERVICE_CHARGE)
         db.set_config("tax_rate", config.TAX_RATE)
+    if not db.get_config("wpca_rate"):
+        db.set_config("wpca_rate", config.WPCA_RATE)
     if not db.get_config("pvs6_host") and config.PVS6_HOST:
         db.set_config("pvs6_host", config.PVS6_HOST)
         db.set_config("pvs6_port", config.PVS6_PORT)

@@ -49,9 +49,11 @@ async function fetchRealtime() {
         // Metrics row
         document.getElementById('nonCryptoValue').textContent = ElecCharts.formatKw(nonCryptoW) + ' kW';
 
-        // Cost per hour: consumption_kW * energy_rate
+        // Cost per hour: grid import kW * marginal energy rate (energy + WPCA + taxes).
+        // Solar-covered load and exports don't cost energy charges; demand is billed separately.
         const rates = await getRates();
-        const costPerHr = (consW / 1000) * rates.energy_rate;
+        const marginalRate = (rates.energy_rate + rates.wpca_rate) * (1 + rates.tax_rate);
+        const costPerHr = (Math.max(gridW, 0) / 1000) * marginalRate;
         document.getElementById('costHrValue').textContent = '$' + costPerHr.toFixed(2);
 
         // Solar offset %
@@ -158,13 +160,14 @@ async function getRates() {
         const data = await resp.json();
         cachedRates = {
             energy_rate: data.energy_rate || 0.08907,
+            wpca_rate: data.wpca_rate ?? 0.00379,
             demand_rate: data.demand_rate || 15.38,
             base_service_charge: data.base_service_charge || 20.00,
-            tax_rate: data.tax_rate || 0.0672,
+            tax_rate: data.tax_rate || 0.067,
         };
         return cachedRates;
     } catch {
-        return { energy_rate: 0.08907, demand_rate: 15.38, base_service_charge: 20, tax_rate: 0.0672 };
+        return { energy_rate: 0.08907, wpca_rate: 0.00379, demand_rate: 15.38, base_service_charge: 20, tax_rate: 0.067 };
     }
 }
 
