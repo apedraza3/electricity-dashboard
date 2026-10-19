@@ -135,16 +135,15 @@ async function testPvs6() {
     status.textContent = 'Testing...';
     status.className = 'status-inline';
 
-    // Save first, then check status
+    // Save first, then make one real request to the PVS6
     await saveSettings();
-    const resp = await fetch('/api/status');
-    const data = await resp.json();
-
-    if (data.pvs6_configured) {
-        status.textContent = 'Configured';
-        status.className = 'status-inline status-ok';
-    } else {
-        status.textContent = 'Not reachable';
+    try {
+        const resp = await fetch('/api/pvs6/test', { method: 'POST' });
+        const data = await resp.json();
+        status.textContent = data.message;
+        status.className = 'status-inline ' + (data.ok ? 'status-ok' : 'status-err');
+    } catch (e) {
+        status.textContent = 'Test failed: ' + e.message;
         status.className = 'status-inline status-err';
     }
 }

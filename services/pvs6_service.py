@@ -70,6 +70,37 @@ class PVS6Service:
             logger.error("PVS6 fetch error: %s", e)
         return None
 
+    def probe(self) -> dict:
+        """One real DeviceList request, for the settings page's Test Connection.
+
+        Returns {"ok": bool, "message": str, "status_code": int|None}. A 403 usually
+        means PVS6 firmware 61839+, which requires logging in before dl_cgi.
+        """
+        if not self.is_configured:
+            return {"ok": False, "message": "No PVS6 IP address set", "status_code": None}
+        try:
+            resp = requests.get(self.base_url + self.DEVICE_LIST_PATH,
+                                timeout=self._timeout, verify=False)
+        except requests.RequestException as e:
+            return {"ok": False, "message": f"Not reachable: {type(e).__name__}", "status_code": None}
+        if resp.status_code == 403:
+            return {"ok": False, "status_code": 403,
+                    "message": "403 Forbidden: PVS6 firmware likely requires login (build 61839+)"}
+        if not resp.ok:
+            return {"ok": False, "message": f"HTTP {resp.status_code}", "status_code": resp.status_code}
+        try:
+            devices = resp.json().get("devices", [])
+        except ValueError:
+            return {"ok": False, "message": "Reply was not JSON", "status_code": resp.status_code}
+        meters = [d.get("TYPE") for d in devices if d.get("TYPE") in ("PVS5-METER-P", "PVS5-METER-C")]
+        supervisor = next((d for d in devices if d.get("DEVICE_TYPE") == "PVS"), {})
+        build = supervisor.get("SWVER") or "unknown"
+        if len(meters) < 2:
+            return {"ok": False, "status_code": resp.status_code,
+                    "message": f"Connected, but production/consumption meters missing (firmware {build})"}
+        return {"ok": True, "status_code": resp.status_code,
+                "message": f"Connected: {len(devices)} devices, both meters (firmware {build})"}
+
     def _find_meter(self, devices: list[dict], meter_type: str) -> dict | None:
         """Find a meter device by TYPE (PVS5-METER-P or PVS5-METER-C)."""
         for dev in devices:

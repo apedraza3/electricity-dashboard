@@ -517,6 +517,18 @@ def api_solar_roi():
 
 # ---- Status API ----
 
+@app.route("/api/pvs6/test", methods=["POST"])
+@login_required
+def api_pvs6_test():
+    """Make one real request to the PVS6 with the saved settings."""
+    probe_svc = PVS6Service(
+        host=db.get_config("pvs6_host", config.PVS6_HOST),
+        port=int(db.get_config("pvs6_port", config.PVS6_PORT)),
+        use_https=db.get_config("pvs6_use_https", str(config.PVS6_USE_HTTPS).lower()) == "true",
+    )
+    return jsonify(probe_svc.probe())
+
+
 @app.route("/api/status")
 @login_required
 def api_status():
