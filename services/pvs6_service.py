@@ -14,11 +14,18 @@ class PVS6Service:
 
     DEVICE_LIST_PATH = "/cgi-bin/dl_cgi?Command=DeviceList"
 
-    def __init__(self, host="", port=80, use_https=False):
+    def __init__(self, host="", port=80, use_https=False, serial="", on_serial=None):
         self.host = host
         self.port = port
         self.use_https = use_https
         self._timeout = 10
+        # Firmware 61839+ requires logging in before dl_cgi: HTTP Basic auth as
+        # ssm_owner with the last 5 characters of the PVS serial, which sets a
+        # session cookie (SunStrong pypvs doc/LocalAPI.md). The serial is learned
+        # from DeviceList while it still works unauthenticated, and saved via on_serial.
+        self.serial = serial or ""
+        self._on_serial = on_serial
+        self._session = requests.Session()
 
     @property
     def base_url(self):
@@ -37,34 +44,64 @@ class PVS6Service:
         self.port = port
         self.use_https = use_https
 
+    @staticmethod
+    def _needs_auth(resp) -> bool:
+        if resp.status_code in (401, 403):
+            return True
+        try:
+            body = resp.json()
+        except ValueError:
+            return False
+        return isinstance(body, dict) and body.get("status") in (401, 403)
+
+    def _login(self) -> bool:
+        if len(self.serial) < 5:
+            logger.error("PVS6 requires login but its serial is unknown")
+            return False
+        resp = self._session.get(self.base_url + "/auth?login", timeout=self._timeout,
+                                 verify=False, auth=("ssm_owner", self.serial[-5:]))
+        if not resp.ok:
+            logger.error("PVS6 login failed: HTTP %s", resp.status_code)
+            return False
+        logger.info("PVS6 login succeeded")
+        return True
+
+    def _learn_serial(self, devices):
+        supervisor = next((d for d in devices if d.get("DEVICE_TYPE") == "PVS"), {})
+        serial = supervisor.get("SERIAL") or ""
+        if serial and serial != self.serial:
+            self.serial = serial
+            if self._on_serial:
+                try:
+                    self._on_serial(serial)
+                except Exception as e:
+                    logger.warning("Could not save PVS6 serial: %s", e)
+
+    def _get_device_list(self):
+        """GET DeviceList, logging in once and retrying if the PVS6 demands auth.
+        Returns (response, logged_in)."""
+        url = self.base_url + self.DEVICE_LIST_PATH
+        resp = self._session.get(url, timeout=self._timeout, verify=False)
+        if self._needs_auth(resp) and self._login():
+            return self._session.get(url, timeout=self._timeout, verify=False), True
+        return resp, False
+
     def is_available(self):
         """Check if PVS6 bridge is reachable."""
-        if not self.is_configured:
-            return False
-        try:
-            resp = requests.get(
-                self.base_url + self.DEVICE_LIST_PATH,
-                timeout=self._timeout,
-                verify=False,
-            )
-            return resp.ok and resp.json().get("result") == "succeed"
-        except Exception:
-            return False
+        return self._fetch_devices() is not None
 
     def _fetch_devices(self) -> list[dict] | None:
         """Fetch the full device list from PVS6."""
         if not self.is_configured:
             return None
         try:
-            resp = requests.get(
-                self.base_url + self.DEVICE_LIST_PATH,
-                timeout=self._timeout,
-                verify=False,
-            )
+            resp, _ = self._get_device_list()
             if resp.ok:
                 data = resp.json()
                 if data.get("result") == "succeed":
-                    return data.get("devices", [])
+                    devices = data.get("devices", [])
+                    self._learn_serial(devices)
+                    return devices
             logger.error("PVS6 fetch failed: %s", resp.status_code)
         except Exception as e:
             logger.error("PVS6 fetch error: %s", e)
@@ -73,33 +110,35 @@ class PVS6Service:
     def probe(self) -> dict:
         """One real DeviceList request, for the settings page's Test Connection.
 
-        Returns {"ok": bool, "message": str, "status_code": int|None}. A 403 usually
-        means PVS6 firmware 61839+, which requires logging in before dl_cgi.
+        Returns {"ok": bool, "message": str, "status_code": int|None}.
         """
         if not self.is_configured:
             return {"ok": False, "message": "No PVS6 IP address set", "status_code": None}
         try:
-            resp = requests.get(self.base_url + self.DEVICE_LIST_PATH,
-                                timeout=self._timeout, verify=False)
+            resp, logged_in = self._get_device_list()
         except requests.RequestException as e:
             return {"ok": False, "message": f"Not reachable: {type(e).__name__}", "status_code": None}
-        if resp.status_code == 403:
+        if self._needs_auth(resp):
+            hint = ("serial unknown, so the dashboard can't log in" if len(self.serial) < 5
+                    else "login with the serial was rejected")
             return {"ok": False, "status_code": 403,
-                    "message": "403 Forbidden: PVS6 firmware likely requires login (build 61839+)"}
+                    "message": f"403: PVS6 firmware requires login and {hint}"}
         if not resp.ok:
             return {"ok": False, "message": f"HTTP {resp.status_code}", "status_code": resp.status_code}
         try:
             devices = resp.json().get("devices", [])
         except ValueError:
             return {"ok": False, "message": "Reply was not JSON", "status_code": resp.status_code}
+        self._learn_serial(devices)
         meters = [d.get("TYPE") for d in devices if d.get("TYPE") in ("PVS5-METER-P", "PVS5-METER-C")]
         supervisor = next((d for d in devices if d.get("DEVICE_TYPE") == "PVS"), {})
         build = supervisor.get("SWVER") or "unknown"
+        via = ", logged in" if logged_in else ""
         if len(meters) < 2:
             return {"ok": False, "status_code": resp.status_code,
-                    "message": f"Connected, but production/consumption meters missing (firmware {build})"}
+                    "message": f"Connected{via}, but production/consumption meters missing (firmware {build})"}
         return {"ok": True, "status_code": resp.status_code,
-                "message": f"Connected: {len(devices)} devices, both meters (firmware {build})"}
+                "message": f"Connected{via}: {len(devices)} devices, both meters (firmware {build})"}
 
     def _find_meter(self, devices: list[dict], meter_type: str) -> dict | None:
         """Find a meter device by TYPE (PVS5-METER-P or PVS5-METER-C)."""

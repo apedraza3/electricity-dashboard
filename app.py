@@ -45,6 +45,7 @@ pvs6_svc = PVS6Service(
     host=config.PVS6_HOST,
     port=config.PVS6_PORT,
     use_https=config.PVS6_USE_HTTPS,
+    on_serial=lambda serial: db.set_config("pvs6_serial", serial),
 )
 emporia_svc = EmporiaService(
     email=config.EMPORIA_EMAIL,
@@ -525,6 +526,8 @@ def api_pvs6_test():
         host=db.get_config("pvs6_host", config.PVS6_HOST),
         port=int(db.get_config("pvs6_port", config.PVS6_PORT)),
         use_https=db.get_config("pvs6_use_https", str(config.PVS6_USE_HTTPS).lower()) == "true",
+        serial=db.get_config("pvs6_serial", ""),
+        on_serial=lambda serial: db.set_config("pvs6_serial", serial),
     )
     return jsonify(probe_svc.probe())
 
@@ -567,6 +570,9 @@ def start_collector():
         db.set_config("discovery_subnet", config.DISCOVERY_SUBNET)
     if not db.get_config("poll_interval"):
         db.set_config("poll_interval", config.POLL_INTERVAL_SECONDS)
+
+    # Serial learned earlier from DeviceList; needed to log in on firmware 61839+
+    pvs6_svc.serial = db.get_config("pvs6_serial", "") or ""
 
     collector.start()
     logger.info("Electricity dashboard started on port %d", config.FLASK_PORT)
