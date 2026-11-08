@@ -16,6 +16,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+
+@app.context_processor
+def _sibling_apps():
+    # Link back to the mining dashboard so the nav works as one front door.
+    # Blank hides the link.
+    return {"mining_url": os.getenv("MINING_DASHBOARD_URL", "https://mining.homelab.lan")}
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 app.secret_key = config.SECRET_KEY or os.urandom(32)
 

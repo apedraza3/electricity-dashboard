@@ -16,6 +16,7 @@
         <a href="/discovery" class="tool-nav-link {% if active_page == 'discovery' %}active{% endif %}">PVS6 Discovery</a>
         <a href="/solar" class="tool-nav-link {% if active_page == 'solar' %}active{% endif %}">Solar ROI</a>
         <a href="/settings" class="tool-nav-link {% if active_page == 'settings' %}active{% endif %}">Settings</a>
+        {% if mining_url %}<a href="{{ mining_url }}/fleet" class="tool-nav-link">Mining Fleet &rarr;</a>{% endif %}
     </nav>
 
     {% block content %}{% endblock %}
