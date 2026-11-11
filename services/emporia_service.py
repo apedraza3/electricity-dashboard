@@ -98,10 +98,25 @@ class EmporiaService:
 
             crypto_w = 0
             got_channel = False
+            # Branch circuits clamped INSIDE the sub-panel (e.g. the C6 immersion cooler).
+            # Reported on their own for per-load visibility; never added to crypto_w when the
+            # mains channel is present, since the mains already includes them.
+            branches = []
             for gid, device_usage in usage_dict.items():
                 if not hasattr(device_usage, "channels"):
                     continue
                 channels = device_usage.channels
+                for num, ch in channels.items():
+                    if num in self.NON_CIRCUIT_CHANNELS or ch.usage is None:
+                        continue
+                    branches.append({
+                        "channel_num": num,
+                        "name": (getattr(ch, "name", None) or f"Circuit {num}").strip(),
+                        "usage_w": round(ch.usage * 3600 * 1000, 1),
+                        "is_crypto": True,
+                        "device_gid": gid,
+                        "branch": True,
+                    })
                 if self.MAINS_CHANNEL in channels:
                     selected = [channels[self.MAINS_CHANNEL]]
                 else:
@@ -128,7 +143,7 @@ class EmporiaService:
                 "usage_w": crypto_w,
                 "is_crypto": True,
                 "device_gid": device_gids[0] if device_gids else None,
-            }]
+            }] + branches
 
             return {
                 "total_w": crypto_w,
